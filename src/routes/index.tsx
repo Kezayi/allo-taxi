@@ -1,9 +1,10 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, CarFront, Check, Eye, EyeOff, LockKeyhole, ShieldCheck, UserRound } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { phoneSchema, pinSchema, signInWithPhonePin } from "@/lib/phone-auth";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
@@ -56,9 +57,29 @@ function Index() {
     administration: { title: "Pilotage sécurisé.", subtitle: "Accès strictement réservé à la direction.", action: "Accéder au Back-Office" },
   }[space];
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void navigate({ to: space === "client" ? "/client" : space === "chauffeur" ? "/chauffeur" : "/administration" });
+    if (space === "client") return void navigate({ to: "/client" });
+    const form = new FormData(event.currentTarget);
+    const phone = String(form.get("phone") ?? "");
+    const pin = String(form.get("pin") ?? "");
+    const p = phoneSchema.safeParse(phone);
+    const c = pinSchema.safeParse(pin);
+    if (!p.success) return setError(p.error.issues[0]?.message ?? "Numéro invalide.");
+    if (!c.success) return setError(c.error.issues[0]?.message ?? "PIN invalide.");
+    setBusy(true);
+    setError(null);
+    try {
+      await signInWithPhonePin(phone, pin);
+      void navigate({ to: space === "chauffeur" ? "/chauffeur" : "/administration" });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Connexion impossible.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -153,9 +174,15 @@ function Index() {
                 Réservé au Superadmin et aux deux Associés autorisés.
               </div>
             )}
-            <Button type="submit" className="h-12 w-full text-sm font-semibold shadow-gold">
+            {error && <p className="text-xs text-primary" role="status">{error}</p>}
+            <Button type="submit" disabled={busy} className="h-12 w-full text-sm font-semibold shadow-gold">
               {copy.action}<ArrowRight />
             </Button>
+            {space !== "client" && (
+              <Link to="/connexion" search={{ retour: space === "chauffeur" ? "/chauffeur" : "/administration" }} className="block text-center text-xs text-muted-foreground hover:text-foreground">
+                Première connexion ? Créer mon code PIN
+              </Link>
+            )}
           </form>
 
           <div className="mt-6 flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
