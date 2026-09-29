@@ -81,6 +81,7 @@ const paymentLabels: Record<Payment, string> = {
 
 type MatchedDriver = { firstName: string; vehicle: string; plate: string; phone: string };
 type ActiveRide = { id: string; token: string; ride: RideRequest; driver: MatchedDriver | null };
+type Eta = { minutes: number; km: number | null };
 
 const ACTIVE_RIDE_KEY = "allo-taxi-active-ride-v2";
 
@@ -97,6 +98,7 @@ function getPosition(): Promise<{ lat: number; lng: number } | null> {
 
 function ClientJourney() {
   const [step, setStep] = useState<Step>("request");
+  const [eta, setEta] = useState<Eta | null>(null);
   const [identityOpen, setIdentityOpen] = useState(true);
   const [ride, setRide] = useState<RideRequest>(initialRide);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -130,13 +132,15 @@ function ClientJourney() {
 
   // Écoute temps réel du statut public de la course
   const activeId = active?.id;
+  const listening = step === "waiting" || step === "matched";
   useEffect(() => {
-    if (!activeId || step !== "waiting") return;
-    const apply = (row: { status: string; chauffeur_first_name: string | null; vehicle_model: string | null; vehicle_plate: string | null; chauffeur_phone: string | null } | null) => {
+    if (!activeId || !listening) return;
+    const apply = (row: { status: string; chauffeur_first_name: string | null; vehicle_model: string | null; vehicle_plate: string | null; chauffeur_phone: string | null; eta_minutes?: number | null; driver_distance_km?: number | null } | null) => {
       if (!row) return;
       if (row.status === "negotiating" && row.chauffeur_first_name) {
         const driver = { firstName: row.chauffeur_first_name, vehicle: row.vehicle_model ?? "", plate: row.vehicle_plate ?? "", phone: row.chauffeur_phone ?? "" };
         setActive((current) => current ? { ...current, driver } : current);
+        setEta(row.eta_minutes != null ? { minutes: row.eta_minutes, km: row.driver_distance_km ?? null } : null);
         setStep("matched");
       } else if (row.status === "canceled") {
         resetAll();
@@ -149,7 +153,7 @@ function ClientJourney() {
       .on("postgres_changes", { event: "*", schema: "public", table: "ride_public_status", filter: `ride_id=eq.${activeId}` }, (payload) => apply(payload.new as Parameters<typeof apply>[0]))
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [activeId, step]);
+  }, [activeId, listening]);
 
   useEffect(() => {
     if (step !== "matched") return;
@@ -266,7 +270,7 @@ function ClientJourney() {
             <WaitingScreen ride={ride} onCancel={cancelRequest} />
           )}
           {step === "matched" && driver && (
-            <MatchedScreen ride={ride} driver={driver} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} onFinish={resetAll} />
+            <MatchedScreen ride={ride} driver={driver} eta={eta} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} onFinish={resetAll} />
           )}
         </div>
       </div>
@@ -396,7 +400,7 @@ function WaitingScreen({ ride, onCancel }: { ride: RideRequest; onCancel: () => 
   );
 }
 
-function MatchedScreen({ ride, driver, whatsappMessage, lockedNotice, onDismissLock, onFinish }: { ride: RideRequest; driver: MatchedDriver; whatsappMessage: string; lockedNotice: boolean; onDismissLock: () => void; onFinish: () => void }) {
+function MatchedScreen({ ride, driver, eta, whatsappMessage, lockedNotice, onDismissLock, onFinish }: { ride: RideRequest; driver: MatchedDriver; eta: Eta | null; whatsappMessage: string; lockedNotice: boolean; onDismissLock: () => void; onFinish: () => void }) {
   const waNumber = driver.phone.replace(/\D/g, "");
   return (
     <section className="glass-panel overflow-hidden">
@@ -419,6 +423,15 @@ function MatchedScreen({ ride, driver, whatsappMessage, lockedNotice, onDismissL
             <p className="mt-1 text-xl font-bold tracking-normal text-foreground">{driver.plate}</p>
           </div>
         </article>
+
+        <div className="mt-4 flex items-center gap-4 rounded-md border border-live/30 bg-live/10 p-4" role="status" aria-live="polite">
+          <span className="relative flex size-3 shrink-0"><span className="absolute inline-flex size-full animate-ping rounded-full bg-live opacity-60 motion-reduce:animate-none" /><span className="relative inline-flex size-3 rounded-full bg-live" /></span>
+          {eta ? (
+            <p className="text-sm leading-6">Arrivée estimée dans <strong className="text-2xl font-bold text-live">~{eta.minutes} min</strong>{eta.km != null && <span className="text-muted-foreground"> · {eta.km < 1 ? `${Math.round(eta.km * 1000)} m` : `${eta.km.toFixed(1)} km`}</span>}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">Calcul du temps d’arrivée… (position GPS du chauffeur ou la vôtre indisponible)</p>
+          )}
+        </div>
 
         <RideSummary ride={ride} />
 
