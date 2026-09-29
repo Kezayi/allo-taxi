@@ -59,6 +59,8 @@ function Index() {
 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [driverSignup, setDriverSignup] = useState(false);
+  const isSignup = space === "chauffeur" && driverSignup;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -70,10 +72,12 @@ function Index() {
     const c = pinSchema.safeParse(pin);
     if (!p.success) return setError(p.error.issues[0]?.message ?? "Numéro invalide.");
     if (!c.success) return setError(c.error.issues[0]?.message ?? "PIN invalide.");
+    if (isSignup && pin !== String(form.get("pin2") ?? "")) return setError("Les deux codes PIN ne correspondent pas.");
     setBusy(true);
     setError(null);
     try {
-      await signInWithPhonePin(phone, pin);
+      if (isSignup) await signUpWithPhonePin(phone, pin);
+      else await signInWithPhonePin(phone, pin);
       void navigate({ to: space === "chauffeur" ? "/chauffeur" : "/administration" });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Connexion impossible.");
@@ -159,29 +163,34 @@ function Index() {
               </div>
             </Field>
             {space !== "client" && (
-              <Field label={space === "chauffeur" ? "Code PIN" : "Code d’accès"} htmlFor="pin">
+              <Field label={isSignup ? "Choisissez votre code PIN (4 ou 6 chiffres)" : "Code PIN"} htmlFor="pin">
                 <div className="relative">
-                  <Input id="pin" name="pin" type={showPin ? "text" : "password"} inputMode="numeric" placeholder="••••" autoComplete="current-password" required className="h-12 pr-12" />
+                  <Input id="pin" name="pin" type={showPin ? "text" : "password"} inputMode="numeric" maxLength={6} placeholder="••••" autoComplete={isSignup ? "new-password" : "current-password"} required className="h-12 pr-12" />
                   <Button type="button" variant="ghost" size="icon" aria-label={showPin ? "Masquer le code" : "Afficher le code"} onClick={() => setShowPin((value) => !value)} className="absolute right-1.5 top-1.5 text-muted-foreground">
                     {showPin ? <EyeOff /> : <Eye />}
                   </Button>
                 </div>
               </Field>
             )}
+            {isSignup && (
+              <Field label="Confirmer le code PIN" htmlFor="pin2">
+                <Input id="pin2" name="pin2" type={showPin ? "text" : "password"} inputMode="numeric" maxLength={6} placeholder="••••" autoComplete="new-password" required className="h-12" />
+              </Field>
+            )}
             {space === "administration" && (
               <div className="flex items-start gap-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs leading-5 text-muted-foreground">
                 <LockKeyhole className="mt-0.5 size-4 shrink-0 text-primary" />
-                Réservé au Superadmin et aux deux Associés autorisés.
+                Réservé au Superadmin et aux deux Associés. Les comptes Associés sont créés par le Superadmin.
               </div>
             )}
             {error && <p className="text-xs text-primary" role="status">{error}</p>}
             <Button type="submit" disabled={busy} className="h-12 w-full text-sm font-semibold shadow-gold">
-              {copy.action}<ArrowRight />
+              {isSignup ? "Créer mon compte chauffeur" : copy.action}<ArrowRight />
             </Button>
-            {space !== "client" && (
-              <Link to="/connexion" search={{ retour: space === "chauffeur" ? "/chauffeur" : "/administration" }} className="block text-center text-xs text-muted-foreground hover:text-foreground">
-                Première connexion ? Créer mon code PIN
-              </Link>
+            {space === "chauffeur" && (
+              <Button type="button" variant="ghost" onClick={() => { setDriverSignup((v) => !v); setError(null); }} className="w-full text-xs text-muted-foreground">
+                {driverSignup ? "Déjà inscrit ? Se connecter" : "Nouveau chauffeur ? S’inscrire"}
+              </Button>
             )}
           </form>
 
