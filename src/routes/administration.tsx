@@ -421,21 +421,92 @@ function AccessMatrix({ partners }: { partners: Record<PartnerType, Partner> }) 
   );
 }
 
-function SuperAdminModules() {
+function SuperAdminModules({ onNotice }: { onNotice: (message: string) => void }) {
   return (
     <>
       <AuditRegistry />
-      <section className="mt-4">
-      <ModuleCard icon={<ShieldCheck />} title="Modération" description="3 vérifications de profils en attente" />
-      </section>
+      <DriverModeration onNotice={onNotice} />
     </>
   );
 }
 
+type PendingDriver = { user_id: string; first_name: string; phone: string; vehicle_model: string; vehicle_plate: string; has_ac: boolean; created_at: string };
+
+function DriverModeration({ onNotice }: { onNotice: (message: string) => void }) {
+  const [drivers, setDrivers] = useState<PendingDriver[]>([]);
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("drivers").select("user_id, first_name, phone, vehicle_model, vehicle_plate, has_ac, created_at").eq("status", "pending").order("created_at");
+    setDrivers(data ?? []);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function decide(userId: string, approve: boolean) {
+    const { error } = await supabase.rpc("approve_driver", { _user_id: userId, _approve: approve });
+    if (error) return onNotice("Décision non enregistrée. Réessayez.");
+    onNotice(approve ? "Chauffeur validé : il peut activer sa journée." : "Dossier refusé et compte suspendu.");
+    void load();
+  }
+
+  return (
+    <section className="glass-panel mt-4 p-5 sm:p-7">
+      <p className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="size-4 text-live" />Modération des chauffeurs</p>
+      <p className="mt-1 text-xs text-muted-foreground">{drivers.length} dossier{drivers.length > 1 ? "s" : ""} en attente de validation</p>
+      <div className="mt-4 space-y-3">
+        {drivers.map((driver) => (
+          <div key={driver.user_id} className="flex flex-col gap-3 rounded-md border border-border bg-secondary/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">{driver.first_name} · {driver.vehicle_model}</p>
+              <p className="mt-1 text-xs font-bold uppercase text-primary">{driver.vehicle_plate}</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">{maskPhone(driver.phone)} · {driver.has_ac ? "Climatisé" : "Standard"}</p>
+            </div>
+            <div className="grid shrink-0 grid-cols-2 gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => void decide(driver.user_id, false)} className="text-destructive">Refuser</Button>
+              <Button type="button" size="sm" onClick={() => void decide(driver.user_id, true)} className="bg-live text-foreground hover:bg-live/90">Valider</Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const auditStatusMap: Record<string, AuditStatus> = { completed: "boarded", canceled: "failed", timeout: "timeout" };
+
+function timeOf(value: string | null) {
+  return value ? new Date(value).toLocaleTimeString("fr-FR", { timeZone: "Africa/Libreville" }) : "";
+}
+
 function AuditRegistry() {
+  const [auditRides, setAuditRides] = useState<AuditRide[]>([]);
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
-  const [selectedIds, setSelectedIds] = useState<string[]>(auditRides.map((ride) => ride.id));
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeRide, setActiveRide] = useState<AuditRide | null>(null);
+
+  useEffect(() => {
+    supabase.rpc("export_full_ride_logs").then(({ data }) => {
+      const rows: AuditRide[] = (data ?? []).map((log) => {
+        const status = auditStatusMap[log.resolution_status] ?? "failed";
+        const timeline = [
+          log.published_at && { time: timeOf(log.published_at), label: "Course publiée par le client" },
+          log.matched_at && { time: timeOf(log.matched_at), label: "Course acceptée par le taxi · redirection WhatsApp" },
+          { time: timeOf(log.resolved_at), label: status === "boarded" ? "Chauffeur valide l’embarquement" : status === "timeout" ? "Délai de négociation expiré" : "Échec de la discussion déclaré" },
+        ].filter(Boolean) as { time: string; label: string }[];
+        return {
+          id: log.id,
+          dateTime: new Date(log.resolved_at).toLocaleString("fr-FR", { timeZone: "Africa/Libreville", dateStyle: "short", timeStyle: "short" }).replace(" ", " · "),
+          driver: { name: log.chauffeur_name ?? "—", phone: log.chauffeur_phone ?? "", vehicle: "", plate: log.vehicle_plate ?? "" },
+          client: { name: log.client_name, phone: log.client_phone },
+          pickup: log.pickup_location,
+          destination: log.dropoff_location,
+          price: log.proposed_price,
+          status,
+          timeline,
+        };
+      });
+      setAuditRides(rows);
+      setSelectedIds(rows.map((ride) => ride.id));
+    });
+  }, []);
 
   function togglePhone(key: string) {
     setRevealed((current) => ({ ...current, [key]: !current[key] }));
