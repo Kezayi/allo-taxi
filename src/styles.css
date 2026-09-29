@@ -62,6 +62,7 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --color-live: var(--live);
   --shadow-gold: 0 12px 32px color-mix(in oklab, var(--primary) 18%, transparent);
+  --shadow-live: 0 12px 34px color-mix(in oklab, var(--live) 24%, transparent);
 }
 
 :root {
@@ -167,6 +168,25 @@
     linear-gradient(to bottom, color-mix(in oklab, var(--border) 28%, transparent) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: linear-gradient(to bottom, black, transparent 78%);
+}
+
+@keyframes journey-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes radar-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@utility animate-journey-in {
+  animation: journey-in 0.9s ease-out both;
+}
+
+@utility radar {
+  background: conic-gradient(from 0deg, color-mix(in oklab, var(--live) 38%, transparent), transparent 28%);
+  animation: radar-sweep 1.8s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

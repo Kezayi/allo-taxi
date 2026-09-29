@@ -11,3 +11,4 @@
 
 - Keep Client, Chauffeur, and Administration as distinct top-level routes so each product space remains isolated and independently extensible.
 - Store account profiles separately from role assignments; this prevents profile edits from becoming privilege escalation paths.
+- Keep the express ride journey client-local until a later real-time dispatch milestone; this preserves the requested simulation boundary without fake persistence.
