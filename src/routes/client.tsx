@@ -178,6 +178,15 @@ function ClientJourney() {
         const base = updatedAt ? Math.min(Date.parse(updatedAt), Date.now()) : Date.now();
         setEta(row.eta_minutes != null ? { minutes: row.eta_minutes, km: row.driver_distance_km ?? null, arrivalAt: base + row.eta_minutes * 60000 } : null);
         setStep("matched");
+      } else if (row.status === "pending") {
+        // Discussion échouée côté chauffeur : la course est relancée dans le pool
+        setActive((current) => {
+          if (current?.driver) setRelaunched(true);
+          return current ? { ...current, driver: null } : current;
+        });
+        setEta(null);
+        setLockedNotice(false);
+        setStep("waiting");
       } else if (row.status === "completed") {
         if (changed || first) chimes.finished();
         resetAll();
