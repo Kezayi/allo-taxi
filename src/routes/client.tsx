@@ -82,7 +82,32 @@ const paymentLabels: Record<Payment, string> = {
 
 type MatchedDriver = { firstName: string; vehicle: string; plate: string; phone: string };
 type ActiveRide = { id: string; token: string; ride: RideRequest; driver: MatchedDriver | null };
-type Eta = { minutes: number; km: number | null };
+type Eta = { minutes: number; km: number | null; arrivalAt: number };
+
+function askNotificationPermission() {
+  if (typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission();
+}
+
+function notifyAccepted(name: string, minutes: number | null) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  const body = minutes != null ? `${name} arrive dans ~${minutes} min.` : `${name} est en route vers vous.`;
+  try {
+    void navigator.serviceWorker?.getRegistration().then((reg) => {
+      if (reg) void reg.showNotification("Course acceptée — Allo Taxi..?", { body, icon: "/icon-192.png", tag: "ride-accepted" });
+      else new Notification("Course acceptée — Allo Taxi..?", { body, icon: "/icon-192.png" });
+    });
+  } catch { /* notifications indisponibles */ }
+}
+
+function Countdown({ arrivalAt }: { arrivalAt: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(t); }, []);
+  const left = Math.max(0, Math.round((arrivalAt - now) / 1000));
+  if (left === 0) return <strong className="text-xl font-bold text-live">Imminente</strong>;
+  const mm = String(Math.floor(left / 60)).padStart(2, "0");
+  const ss = String(left % 60).padStart(2, "0");
+  return <strong className="font-mono text-3xl font-bold tabular-nums text-live">{mm}:{ss}</strong>;
+}
 
 const ACTIVE_RIDE_KEY = "allo-taxi-active-ride-v2";
 
@@ -200,6 +225,8 @@ function ClientJourney() {
     }
     setErrors({});
     setSubmitError(null);
+    if (active) { setStep(active.driver ? "matched" : "waiting"); return; }
+    askNotificationPermission();
     setSubmitting(true);
     const position = await getPosition();
     const id = crypto.randomUUID();
@@ -219,7 +246,9 @@ function ClientJourney() {
     });
     setSubmitting(false);
     if (error) {
-      setSubmitError(navigator.onLine ? "La demande n’a pas pu être publiée. Vérifiez vos informations." : "Pas de réseau. Réessayez dès le retour de la connexion.");
+      setSubmitError(error.message.includes("ACTIVE_RIDE_EXISTS")
+        ? "Une course est déjà en cours avec ce numéro. Annulez-la avant d’en publier une nouvelle."
+        : navigator.onLine ? "La demande n’a pas pu être publiée. Vérifiez vos informations." : "Pas de réseau. Réessayez dès le retour de la connexion.");
       return;
     }
     setRide(parsed.data);
@@ -287,7 +316,7 @@ function ClientJourney() {
             <WaitingScreen ride={ride} onCancel={cancelRequest} />
           )}
           {step === "matched" && driver && (
-            <MatchedScreen ride={ride} driver={driver} eta={eta} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} onFinish={resetAll} />
+            <MatchedScreen ride={ride} driver={driver} eta={eta} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} onCancel={cancelRequest} />
           )}
         </div>
       </div>
@@ -417,7 +446,8 @@ function WaitingScreen({ ride, onCancel }: { ride: RideRequest; onCancel: () => 
   );
 }
 
-function MatchedScreen({ ride, driver, eta, whatsappMessage, lockedNotice, onDismissLock, onFinish }: { ride: RideRequest; driver: MatchedDriver; eta: Eta | null; whatsappMessage: string; lockedNotice: boolean; onDismissLock: () => void; onFinish: () => void }) {
+function MatchedScreen({ ride, driver, eta, whatsappMessage, lockedNotice, onDismissLock, onCancel }: { ride: RideRequest; driver: MatchedDriver; eta: Eta | null; whatsappMessage: string; lockedNotice: boolean; onDismissLock: () => void; onCancel: () => void }) {
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const waNumber = driver.phone.replace(/\D/g, "");
   return (
     <section className="glass-panel overflow-hidden">
@@ -444,7 +474,7 @@ function MatchedScreen({ ride, driver, eta, whatsappMessage, lockedNotice, onDis
         <div className="mt-4 flex items-center gap-4 rounded-md border border-live/30 bg-live/10 p-4" role="status" aria-live="polite">
           <span className="relative flex size-3 shrink-0"><span className="absolute inline-flex size-full animate-ping rounded-full bg-live opacity-60 motion-reduce:animate-none" /><span className="relative inline-flex size-3 rounded-full bg-live" /></span>
           {eta ? (
-            <p className="text-sm leading-6">Arrivée estimée dans <strong className="text-2xl font-bold text-live">~{eta.minutes} min</strong>{eta.km != null && <span className="text-muted-foreground"> · {eta.km < 1 ? `${Math.round(eta.km * 1000)} m` : `${eta.km.toFixed(1)} km`}</span>}</p>
+            <div className="text-sm leading-6"><p className="text-xs uppercase text-muted-foreground">Votre chauffeur arrive dans</p><Countdown arrivalAt={eta.arrivalAt} />{eta.km != null && <span className="ml-2 text-muted-foreground">· {eta.km < 1 ? `${Math.round(eta.km * 1000)} m` : `${eta.km.toFixed(1)} km`}</span>}</div>
           ) : (
             <p className="text-sm text-muted-foreground">Calcul du temps d’arrivée… (position GPS du chauffeur ou la vôtre indisponible)</p>
           )}
@@ -461,7 +491,18 @@ function MatchedScreen({ ride, driver, eta, whatsappMessage, lockedNotice, onDis
           <a href={`https://wa.me/${waNumber}?text=${whatsappMessage}`} target="_blank" rel="noreferrer">Ouvrir la discussion privée WhatsApp <ArrowLeft className="rotate-180" /></a>
         </Button>
         {lockedNotice && <Button type="button" variant="ghost" onClick={onDismissLock} className="mt-2 w-full text-xs text-muted-foreground">Rester sur cette course</Button>}
-        <Button type="button" variant="ghost" onClick={onFinish} className="mt-2 w-full text-xs text-muted-foreground">Course terminée — nouvelle demande</Button>
+        {confirmCancel ? (
+          <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-center">
+            <p className="text-xs">Le chauffeur est en route. Annuler vraiment la course ?</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <Button type="button" variant="ghost" onClick={() => setConfirmCancel(false)} className="text-xs">Non, garder</Button>
+              <Button type="button" variant="destructive" onClick={onCancel} className="text-xs">Oui, annuler</Button>
+            </div>
+          </div>
+        ) : (
+          <Button type="button" variant="ghost" onClick={() => setConfirmCancel(true)} className="mt-2 w-full text-xs text-muted-foreground">Annuler la course en cours</Button>
+        )}
+        <p className="mt-2 text-center text-[10px] text-muted-foreground">Une nouvelle demande sera possible une fois cette course terminée ou annulée.</p>
         <p className="mt-4 flex items-center justify-center gap-2 text-[10px] text-muted-foreground"><ShieldCheck className="size-3.5 text-live" />Votre numéro reste privé jusqu’à l’ouverture de WhatsApp.</p>
       </div>
     </section>
