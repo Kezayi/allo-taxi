@@ -129,6 +129,8 @@ function ClientJourney() {
   const [ride, setRide] = useState<RideRequest>(initialRide);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [lockedNotice, setLockedNotice] = useState(false);
+  const [relaunched, setRelaunched] = useState(false);
+  useEffect(() => { if (step !== "waiting") setRelaunched(false); }, [step]);
   const [active, setActive] = useState<ActiveRide | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -322,7 +324,15 @@ function ClientJourney() {
             />
           )}
           {step === "waiting" && (
-            <WaitingScreen ride={ride} onCancel={cancelRequest} />
+            <>
+              {relaunched && (
+                <div className="mb-4 rounded-md border border-primary/30 bg-primary/10 p-4 text-center text-sm" role="status">
+                  Le chauffeur n’a pas pu finaliser la course. <strong>Votre demande est relancée</strong> auprès des autres taximen.
+                </div>
+              )}
+              <WaitingScreen ride={ride} onCancel={cancelRequest} />
+            </>
+          )}
           )}
           {step === "matched" && driver && (
             <MatchedScreen ride={ride} driver={driver} eta={eta} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} onCancel={cancelRequest} />
