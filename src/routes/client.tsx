@@ -143,10 +143,15 @@ function ClientJourney() {
       const first = lastStatus === null;
       lastStatus = row.status;
       if (row.status === "negotiating" && row.chauffeur_first_name) {
-        if (changed || (first && step === "waiting")) chimes.accepted();
+        if (changed || (first && step === "waiting")) {
+          chimes.accepted();
+          notifyAccepted(row.chauffeur_first_name, row.eta_minutes ?? null);
+        }
         const driver = { firstName: row.chauffeur_first_name, vehicle: row.vehicle_model ?? "", plate: row.vehicle_plate ?? "", phone: row.chauffeur_phone ?? "" };
         setActive((current) => current ? { ...current, driver } : current);
-        setEta(row.eta_minutes != null ? { minutes: row.eta_minutes, km: row.driver_distance_km ?? null } : null);
+        const updatedAt = (row as { updated_at?: string }).updated_at;
+        const base = updatedAt ? Math.min(Date.parse(updatedAt), Date.now()) : Date.now();
+        setEta(row.eta_minutes != null ? { minutes: row.eta_minutes, km: row.driver_distance_km ?? null, arrivalAt: base + row.eta_minutes * 60000 } : null);
         setStep("matched");
       } else if (row.status === "completed") {
         if (changed || first) chimes.finished();
