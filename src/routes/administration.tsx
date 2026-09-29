@@ -7,9 +7,16 @@ import {
   CarFront,
   ChevronRight,
   CircleDollarSign,
+  Clock3,
+  Download,
+  Eye,
   EyeOff,
+  FileClock,
   Landmark,
+  MapPin,
   Percent,
+  Phone,
+  Route as RouteIcon,
   Save,
   ShieldCheck,
   Sparkles,
@@ -23,12 +30,27 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/administration")({
@@ -56,6 +78,20 @@ type Partner = {
   active: boolean;
 };
 
+type AuditStatus = "boarded" | "failed" | "timeout";
+
+type AuditRide = {
+  id: string;
+  dateTime: string;
+  driver: { name: string; phone: string; vehicle: string; plate: string };
+  client: { name: string; phone: string };
+  pickup: string;
+  destination: string;
+  price: number;
+  status: AuditStatus;
+  timeline: { time: string; label: string }[];
+};
+
 const STORAGE_KEY = "allo-taxi-partner-config-v1";
 const DAILY_REVENUE = 73000;
 
@@ -79,6 +115,73 @@ const roleLabels: Record<AdminRole, string> = {
 
 const months = ["Avr", "Mai", "Juin", "Juil", "Août", "Sept"];
 const consolidatedRevenue = [1420000, 1670000, 1540000, 1980000, 2210000, 2380000];
+
+const auditRides: AuditRide[] = [
+  {
+    id: "AT-0929-041",
+    dateTime: "29/09/2026 · 21:12",
+    driver: { name: "Michel", phone: "+241074575494", vehicle: "Toyota Corolla", plate: "1234 G 1A" },
+    client: { name: "Amina", phone: "+241066128743" },
+    pickup: "Louis, Galerie Tsika",
+    destination: "Nzeng-Ayong, Rond-point",
+    price: 2500,
+    status: "boarded",
+    timeline: [
+      { time: "21:12:03", label: "Course publiée par la cliente" },
+      { time: "21:12:45", label: "Course acceptée par le taxi" },
+      { time: "21:12:46", label: "Redirection vers WhatsApp" },
+      { time: "21:14:22", label: "Chauffeur valide l’embarquement" },
+    ],
+  },
+  {
+    id: "AT-0929-036",
+    dateTime: "29/09/2026 · 18:47",
+    driver: { name: "Junior", phone: "+241062348175", vehicle: "Hyundai Accent", plate: "4821 G 2A" },
+    client: { name: "Mireille", phone: "+241074628190" },
+    pickup: "Charbonnages, Entrée SNI",
+    destination: "PK8, Carrefour IAI",
+    price: 3000,
+    status: "failed",
+    timeline: [
+      { time: "18:47:08", label: "Course publiée par la cliente" },
+      { time: "18:47:51", label: "Course acceptée par le taxi" },
+      { time: "18:47:52", label: "Redirection vers WhatsApp" },
+      { time: "18:53:17", label: "Échec de la discussion déclaré" },
+    ],
+  },
+  {
+    id: "AT-0929-029",
+    dateTime: "29/09/2026 · 16:05",
+    driver: { name: "Cédric", phone: "+241066905432", vehicle: "Kia Rio", plate: "7318 G 1B" },
+    client: { name: "Sandrine", phone: "+241077341826" },
+    pickup: "Glass, Marché",
+    destination: "Owendo, SNI",
+    price: 3500,
+    status: "timeout",
+    timeline: [
+      { time: "16:05:11", label: "Course publiée par la cliente" },
+      { time: "16:05:58", label: "Course acceptée par le taxi" },
+      { time: "16:05:59", label: "Redirection vers WhatsApp" },
+      { time: "16:15:59", label: "Délai de négociation expiré" },
+    ],
+  },
+  {
+    id: "AT-0929-018",
+    dateTime: "29/09/2026 · 11:26",
+    driver: { name: "Patrick", phone: "+241074189635", vehicle: "Renault Logan", plate: "2096 G 3A" },
+    client: { name: "David", phone: "+241062754381" },
+    pickup: "Akébé, Carrefour Léon Mba",
+    destination: "Batterie IV, Ambassade",
+    price: 2000,
+    status: "boarded",
+    timeline: [
+      { time: "11:26:19", label: "Course publiée par le client" },
+      { time: "11:27:02", label: "Course acceptée par le taxi" },
+      { time: "11:27:03", label: "Redirection vers WhatsApp" },
+      { time: "11:29:41", label: "Chauffeur valide l’embarquement" },
+    ],
+  },
+];
 
 function AdministrationDashboard() {
   const [role, setRole] = useState<AdminRole>("super_admin");
@@ -325,10 +428,163 @@ function AccessMatrix({ partners }: { partners: Record<PartnerType, Partner> }) 
 
 function SuperAdminModules() {
   return (
-    <section className="mt-6 grid gap-4 sm:grid-cols-2">
-      <ModuleCard icon={<Activity />} title="Traçabilité des courses" description="187 mises en relation suivies aujourd’hui" />
+    <>
+      <AuditRegistry />
+      <section className="mt-4">
       <ModuleCard icon={<ShieldCheck />} title="Modération" description="3 vérifications de profils en attente" />
+      </section>
+    </>
+  );
+}
+
+function AuditRegistry() {
+  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [selectedIds, setSelectedIds] = useState<string[]>(auditRides.map((ride) => ride.id));
+  const [activeRide, setActiveRide] = useState<AuditRide | null>(null);
+
+  function togglePhone(key: string) {
+    setRevealed((current) => ({ ...current, [key]: !current[key] }));
+  }
+
+  function toggleSelection(id: string) {
+    setSelectedIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
+  }
+
+  function exportCsv() {
+    const selected = auditRides.filter((ride) => selectedIds.includes(ride.id));
+    if (selected.length === 0) return;
+    const headers = ["Référence", "Date/Heure", "Chauffeur", "Téléphone chauffeur", "Véhicule", "Plaque", "Client", "Téléphone client", "Départ", "Destination", "Prix (FCFA)", "Statut"];
+    const rows = selected.map((ride) => [
+      ride.id,
+      ride.dateTime,
+      ride.driver.name,
+      ride.driver.phone,
+      ride.driver.vehicle,
+      ride.driver.plate,
+      ride.client.name,
+      ride.client.phone,
+      ride.pickup,
+      ride.destination,
+      String(ride.price),
+      statusLabels[ride.status],
+    ]);
+    const csv = `\uFEFF${[headers, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n")}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `allo-taxi-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <section className="glass-panel mt-6 overflow-hidden" aria-labelledby="audit-title">
+      <div className="flex flex-col gap-4 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between sm:p-7">
+        <div>
+          <p className="flex items-center gap-2 text-[10px] font-semibold uppercase text-primary"><FileClock className="size-4" />Superadmin uniquement</p>
+          <h2 id="audit-title" className="mt-2 text-xl font-semibold">📁 Registre de Traçabilité &amp; Audit</h2>
+          <p className="mt-1 text-xs text-muted-foreground">{auditRides.length} mises en relation enregistrées aujourd’hui · {selectedIds.length} sélectionnée{selectedIds.length > 1 ? "s" : ""}</p>
+        </div>
+        <Button type="button" onClick={exportCsv} disabled={selectedIds.length === 0} className="h-11 shrink-0 font-bold shadow-gold">
+          <Download />Exporter la sélection en CSV
+        </Button>
+      </div>
+
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-secondary/60 hover:bg-secondary/60">
+            <TableHead className="w-10 pl-5"><span className="sr-only">Sélection</span></TableHead>
+            <TableHead className="min-w-32">Date/Heure</TableHead>
+            <TableHead className="min-w-56">Chauffeur (Véhicule &amp; Plaque)</TableHead>
+            <TableHead className="min-w-44">Client</TableHead>
+            <TableHead className="min-w-60">Trajet (Départ/Destination)</TableHead>
+            <TableHead className="min-w-28">Prix (FCFA)</TableHead>
+            <TableHead className="min-w-28 pr-5">Statut</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {auditRides.map((ride) => {
+            const driverKey = `${ride.id}-driver`;
+            const clientKey = `${ride.id}-client`;
+            return (
+              <TableRow key={ride.id} tabIndex={0} role="button" aria-label={`Voir les détails de la course ${ride.id}`} onClick={() => setActiveRide(ride)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setActiveRide(ride); } }} className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+                <TableCell className="pl-5" onClick={(event) => event.stopPropagation()}>
+                  <input type="checkbox" checked={selectedIds.includes(ride.id)} onChange={() => toggleSelection(ride.id)} aria-label={`Sélectionner la course ${ride.id}`} className="size-4 accent-primary" />
+                </TableCell>
+                <TableCell><p className="text-xs font-semibold">{ride.dateTime}</p><p className="mt-1 text-[10px] text-muted-foreground">{ride.id}</p></TableCell>
+                <TableCell>
+                  <p className="text-xs font-semibold">{ride.driver.name} · {ride.driver.vehicle}</p>
+                  <p className="mt-1 text-[10px] font-bold uppercase text-primary">{ride.driver.plate}</p>
+                  <PhoneValue phone={ride.driver.phone} revealed={Boolean(revealed[driverKey])} label={`numéro du chauffeur ${ride.driver.name}`} onToggle={() => togglePhone(driverKey)} />
+                </TableCell>
+                <TableCell><p className="text-xs font-semibold">{ride.client.name}</p><PhoneValue phone={ride.client.phone} revealed={Boolean(revealed[clientKey])} label={`numéro du client ${ride.client.name}`} onToggle={() => togglePhone(clientKey)} /></TableCell>
+                <TableCell><p className="text-xs"><span className="text-muted-foreground">Départ :</span> {ride.pickup}</p><p className="mt-1 text-xs"><span className="text-muted-foreground">Destination :</span> {ride.destination}</p></TableCell>
+                <TableCell className="font-black tabular-nums text-primary">{ride.price.toLocaleString("fr-FR")}</TableCell>
+                <TableCell className="pr-5"><StatusBadge status={ride.status} /></TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+
+      <Sheet open={Boolean(activeRide)} onOpenChange={(open) => { if (!open) setActiveRide(null); }}>
+        <SheetContent side="right" className="w-[92vw] overflow-y-auto border-border bg-card/95 p-0 backdrop-blur-xl sm:max-w-lg">
+          {activeRide && <AuditDrawer ride={activeRide} />}
+        </SheetContent>
+      </Sheet>
     </section>
+  );
+}
+
+function PhoneValue({ phone, revealed, label, onToggle }: { phone: string; revealed: boolean; label: string; onToggle: () => void }) {
+  return (
+    <div className="mt-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+      <Phone className="size-3" /><span className="font-mono tabular-nums">{revealed ? formatPhone(phone) : maskPhone(phone)}</span>
+      <Button type="button" variant="ghost" size="icon" onClick={(event) => { event.stopPropagation(); onToggle(); }} className="size-6 text-muted-foreground hover:text-primary" aria-label={`${revealed ? "Masquer" : "Révéler"} le ${label}`} title={`${revealed ? "Masquer" : "Révéler"} le numéro`}>
+        {revealed ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5 animate-pulse" />}
+      </Button>
+    </div>
+  );
+}
+
+const statusLabels: Record<AuditStatus, string> = { boarded: "Embarqué", failed: "Échec Négo", timeout: "Time-out" };
+
+function StatusBadge({ status }: { status: AuditStatus }) {
+  const styles: Record<AuditStatus, string> = { boarded: "border-live/30 bg-live/10 text-live", failed: "border-destructive/30 bg-destructive/10 text-destructive", timeout: "border-primary/30 bg-primary/10 text-primary" };
+  const dots: Record<AuditStatus, string> = { boarded: "bg-live", failed: "bg-destructive", timeout: "bg-primary" };
+  return <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-bold", styles[status])}><span className={cn("size-1.5 rounded-full shadow-current", dots[status])} />{statusLabels[status]}</span>;
+}
+
+function AuditDrawer({ ride }: { ride: AuditRide }) {
+  return (
+    <div className="min-h-full">
+      <SheetHeader className="border-b border-border p-6 pr-14 text-left">
+        <p className="text-[10px] font-semibold uppercase text-primary">Audit Trail · {ride.id}</p>
+        <SheetTitle className="text-2xl">Chronologie de la course</SheetTitle>
+        <SheetDescription>{ride.dateTime} · <StatusBadge status={ride.status} /></SheetDescription>
+      </SheetHeader>
+      <div className="p-6">
+        <div className="grid gap-3 rounded-md border border-border bg-secondary/60 p-4 text-xs">
+          <p className="flex gap-2"><MapPin className="mt-0.5 size-4 shrink-0 text-primary" /><span><strong>Départ</strong><br /><span className="text-muted-foreground">{ride.pickup}</span></span></p>
+          <p className="flex gap-2"><RouteIcon className="mt-0.5 size-4 shrink-0 text-live" /><span><strong>Destination</strong><br /><span className="text-muted-foreground">{ride.destination}</span></span></p>
+          <div className="border-t border-border pt-3"><p><strong>{ride.client.name}</strong> avec {ride.driver.name}</p><p className="mt-1 text-muted-foreground">{ride.driver.vehicle} · <span className="font-bold text-primary">{ride.driver.plate}</span></p><p className="mt-2 text-lg font-black text-primary">{ride.price.toLocaleString("fr-FR")} FCFA</p></div>
+        </div>
+        <div className="mt-7">
+          <p className="flex items-center gap-2 text-sm font-semibold"><Clock3 className="size-4 text-primary" />Historique millimétré</p>
+          <ol className="relative mt-5 ml-2 border-l border-border">
+            {ride.timeline.map((entry, index) => (
+              <li key={`${entry.time}-${entry.label}`} className="relative ml-6 pb-7 last:pb-0">
+                <span className={cn("absolute -left-[31px] top-0.5 size-3 rounded-full border-2 border-card", index === ride.timeline.length - 1 ? "bg-live shadow-live" : "bg-primary")} />
+                <time className="font-mono text-xs font-bold tabular-nums text-primary">{entry.time}</time>
+                <p className="mt-1 text-sm leading-5 text-foreground">{entry.label}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -365,4 +621,21 @@ function compactMoney(value: number) {
   if (value >= 1000000) return `${(value / 1000000).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} M`;
   if (value >= 1000) return `${Math.round(value / 1000)} k`;
   return value.toLocaleString("fr-FR");
+}
+
+function formatPhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length !== 12 || !digits.startsWith("241")) return phone;
+  return `+241 ${digits.slice(3, 6)} ${digits.slice(6, 8)} ${digits.slice(8, 10)} ${digits.slice(10, 12)}`;
+}
+
+function maskPhone(phone: string) {
+  const formatted = formatPhone(phone);
+  const parts = formatted.split(" ");
+  if (parts.length !== 5) return phone.replace(/\d(?=\d{4})/g, "*");
+  return `${parts[0]} ${parts[1]} ${parts[2]} ** **`;
+}
+
+function csvCell(value: string) {
+  return `"${value.replaceAll('"', '""')}"`;
 }
