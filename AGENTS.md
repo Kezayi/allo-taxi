@@ -8,3 +8,6 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Keep Client, Chauffeur, and Administration as distinct top-level routes so each product space remains isolated and independently extensible.
+- Store account profiles separately from role assignments; this prevents profile edits from becoming privilege escalation paths.
