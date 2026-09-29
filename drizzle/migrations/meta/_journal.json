@@ -36,6 +36,13 @@
       "when": 1790700312506,
       "tag": "0004_superadmin_exists",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790700996394,
+      "tag": "0005_backoffice_settings_and_demo",
+      "breakpoints": true
     }
   ]
 }
