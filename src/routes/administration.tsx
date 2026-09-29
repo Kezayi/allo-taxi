@@ -55,6 +55,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { useServerFn } from "@tanstack/react-start";
+import { provisionAssociateAccount } from "@/lib/associates.functions";
 
 export const Route = createFileRoute("/administration")({
   head: () => ({
