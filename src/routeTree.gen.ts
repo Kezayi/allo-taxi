@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdministrationRouteImport } from './routes/administration'
 import { Route as ChauffeurRouteImport } from './routes/chauffeur'
 import { Route as ClientRouteImport } from './routes/client'
+import { Route as ConnexionRouteImport } from './routes/connexion'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +35,25 @@ const ClientRoute = ClientRouteImport.update({
   path: '/client',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConnexionRoute = ConnexionRouteImport.update({
+  id: '/connexion',
+  path: '/connexion',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/administration': typeof AdministrationRoute
   '/chauffeur': typeof ChauffeurRoute
   '/client': typeof ClientRoute
+  '/connexion': typeof ConnexionRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/administration': typeof AdministrationRoute
   '/chauffeur': typeof ChauffeurRoute
   '/client': typeof ClientRoute
+  '/connexion': typeof ConnexionRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,20 @@ export interface FileRoutesById {
   '/administration': typeof AdministrationRoute
   '/chauffeur': typeof ChauffeurRoute
   '/client': typeof ClientRoute
+  '/connexion': typeof ConnexionRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/administration' | '/chauffeur' | '/client'
+  fullPaths: '/' | '/administration' | '/chauffeur' | '/client' | '/connexion'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/administration' | '/chauffeur' | '/client'
-  id: '__root__' | '/' | '/administration' | '/chauffeur' | '/client'
+  to: '/' | '/administration' | '/chauffeur' | '/client' | '/connexion'
+  id:
+    | '__root__'
+    | '/'
+    | '/administration'
+    | '/chauffeur'
+    | '/client'
+    | '/connexion'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +82,7 @@ export interface RootRouteChildren {
   AdministrationRoute: typeof AdministrationRoute
   ChauffeurRoute: typeof ChauffeurRoute
   ClientRoute: typeof ClientRoute
+  ConnexionRoute: typeof ConnexionRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +115,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/connexion': {
+      id: '/connexion'
+      path: '/connexion'
+      fullPath: '/connexion'
+      preLoaderRoute: typeof ConnexionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +130,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdministrationRoute: AdministrationRoute,
   ChauffeurRoute: ChauffeurRoute,
   ClientRoute: ClientRoute,
+  ConnexionRoute: ConnexionRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -8,6 +8,27 @@
       "when": 1790694589599,
       "tag": "0000_create_allo_taxi_profiles_and_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790698389931,
+      "tag": "0001_allo_taxi_core_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790698428763,
+      "tag": "0002_driver_availability_rpc",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790698632931,
+      "tag": "0003_financial_today_split",
+      "breakpoints": true
     }
   ]
 }

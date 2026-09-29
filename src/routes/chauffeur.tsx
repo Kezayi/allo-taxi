@@ -19,10 +19,14 @@ import {
   Wind,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { useSession } from "@/hooks/use-session";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/chauffeur")({
@@ -39,13 +43,13 @@ export const Route = createFileRoute("/chauffeur")({
   component: DriverWorkspace,
 });
 
-type Payment = "Espèces" | "AirtelMoney" | "MoovMoney";
+type Payment = string;
 
 type RideOffer = {
   id: string;
   client: string;
   phone: string;
-  distance: number;
+  distance: number | null;
   pickup: string;
   destination: string;
   payment: Payment;
@@ -57,51 +61,65 @@ type PersistedDriverState = {
   accessActive: boolean;
   isOnline: boolean;
   airConditioning: boolean;
-  selectedRideId: string | null;
+  lockedRide: RideOffer | null;
 };
 
-const STORAGE_KEY = "allo-taxi-driver-workspace-v1";
+type DriverRow = { status: string; first_name: string; has_ac: boolean };
 
-const rideOffers: RideOffer[] = [
-  { id: "course-1", client: "Amina", phone: "24106123456", distance: 1.2, pickup: "Charbonnages, Entrée SNI", destination: "Nzeng-Ayong, Rond-point", payment: "AirtelMoney", airConditioning: true, price: 2000 },
-  { id: "course-2", client: "Junior", phone: "24107458732", distance: 0.8, pickup: "Louis, face à l’église Saint-Louis", destination: "Glass, échangeur du Lycée Léon Mba", payment: "Espèces", airConditioning: false, price: 1500 },
-  { id: "course-3", client: "Mireille", phone: "24106552148", distance: 3.7, pickup: "Akébé-Plaine, pharmacie des Nations", destination: "Aéroport de Libreville, départs", payment: "MoovMoney", airConditioning: true, price: 3500 },
-  { id: "course-4", client: "Cédric", phone: "24107773619", distance: 4.6, pickup: "PK8, carrefour Bizango", destination: "Centre-ville, boulevard Triomphal", payment: "Espèces", airConditioning: false, price: 2500 },
-];
+const STORAGE_KEY = "allo-taxi-driver-workspace-v2";
+const POOL_REFRESH_MS = 10000;
 
-const defaultState: PersistedDriverState = {
-  accessActive: true,
-  isOnline: false,
-  airConditioning: true,
-  selectedRideId: null,
-};
+const defaultState: PersistedDriverState = { accessActive: false, isOnline: false, airConditioning: true, lockedRide: null };
+
+const registrationSchema = z.object({
+  first_name: z.string().trim().min(2, "Prénom trop court.").max(40),
+  phone: z.string().trim().regex(/^\+241[0-9]{8,9}$/, "Format attendu : +241 suivi de 8 ou 9 chiffres."),
+  vehicle_model: z.string().trim().min(2, "Modèle requis.").max(60),
+  vehicle_plate: z.string().trim().min(4, "Plaque requise.").max(15),
+});
+
+function getPosition(): Promise<{ lat: number; lng: number } | null> {
+  return new Promise((resolve) => {
+    if (!("geolocation" in navigator)) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 },
+    );
+  });
+}
+
+function friendlyError(message: string | undefined) {
+  if (!message) return "Action impossible pour le moment.";
+  if (message.includes("déjà prise")) return "Cette course vient d’être prise par un autre chauffeur.";
+  if (message.includes("Abonnement")) return "Activez votre journée pour recevoir des courses.";
+  if (message.includes("Clôturez")) return "Clôturez d’abord votre course en cours.";
+  return navigator.onLine ? "Action impossible pour le moment." : "Pas de réseau. Réessayez dès le retour de la connexion.";
+}
 
 function DriverWorkspace() {
+  const { user, roles, loading } = useSession();
+  const [driver, setDriver] = useState<DriverRow | null | undefined>(undefined);
   const [state, setState] = useState<PersistedDriverState>(defaultState);
   const [hydrated, setHydrated] = useState(false);
   const [networkOnline, setNetworkOnline] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  const [offers, setOffers] = useState<RideOffer[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const isApproved = driver?.status === "approved" && roles.includes("chauffeur");
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       try {
-        const parsed = JSON.parse(stored) as Partial<PersistedDriverState>;
-        setState({
-          accessActive: parsed.accessActive ?? true,
-          isOnline: parsed.isOnline ?? false,
-          airConditioning: parsed.airConditioning ?? true,
-          selectedRideId: parsed.selectedRideId ?? null,
-        });
+        setState({ ...defaultState, ...(JSON.parse(stored) as Partial<PersistedDriverState>) });
       } catch {
         localStorage.removeItem(STORAGE_KEY);
       }
     }
     setNetworkOnline(navigator.onLine);
     setHydrated(true);
-  }, []);
-
-  useEffect(() => {
     const updateNetwork = () => setNetworkOnline(navigator.onLine);
     window.addEventListener("online", updateNetwork);
     window.addEventListener("offline", updateNetwork);
@@ -121,83 +139,213 @@ function DriverWorkspace() {
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
-  const selectedRide = rideOffers.find((ride) => ride.id === state.selectedRideId) ?? null;
-  const visibleOffers = useMemo(
-    () => rideOffers.filter((ride) => state.airConditioning || !ride.airConditioning),
-    [state.airConditioning],
-  );
+  const patchState = useCallback((update: Partial<PersistedDriverState>) => setState((current) => ({ ...current, ...update })), []);
 
-  function patchState(update: Partial<PersistedDriverState>) {
-    setState((current) => ({ ...current, ...update }));
+  // Fiche chauffeur, abonnement du jour et course verrouillée côté serveur
+  const loadDriver = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase.from("drivers").select("status, first_name, has_ac").eq("user_id", user.id).maybeSingle();
+    setDriver(data ?? null);
+    if (!data || data.status !== "approved") return;
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Libreville" }).format(new Date());
+    const [{ data: sub }, { data: current }] = await Promise.all([
+      supabase.from("subscriptions").select("id").eq("driver_id", user.id).eq("day", today).eq("status", "active").maybeSingle(),
+      supabase.from("rides").select("*").eq("chauffeur_id", user.id).eq("status", "negotiating").maybeSingle(),
+    ]);
+    patchState({
+      accessActive: Boolean(sub),
+      airConditioning: data.has_ac,
+      ...(sub ? {} : { isOnline: false }),
+      lockedRide: current ? { id: current.id, client: current.client_name, phone: current.client_phone, distance: null, pickup: current.pickup_location, destination: current.dropoff_location, payment: current.payment_method, airConditioning: current.wants_ac, price: current.price_proposed } : null,
+    });
+  }, [patchState, user]);
+
+  useEffect(() => { void loadDriver(); }, [loadDriver]);
+
+  // Pool localisé : rafraîchi toutes les 10 s quand le chauffeur est en ligne
+  const refreshPool = useCallback(async () => {
+    const position = await getPosition();
+    const { data, error } = await supabase.rpc("get_localized_pool_for_driver", { _lat: position?.lat ?? null as unknown as number, _lng: position?.lng ?? null as unknown as number, _radius_km: 5 });
+    if (error) {
+      if (error.message.includes("Abonnement")) patchState({ accessActive: false, isOnline: false });
+      return;
+    }
+    setOffers((data ?? []).map((row) => ({ id: row.id, client: "", phone: "", distance: row.distance_km, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed })));
+  }, [patchState]);
+
+  useEffect(() => {
+    if (!isApproved || !state.accessActive || !state.isOnline || state.lockedRide || !networkOnline) return;
+    void refreshPool();
+    const interval = window.setInterval(() => void refreshPool(), POOL_REFRESH_MS);
+    return () => window.clearInterval(interval);
+  }, [isApproved, networkOnline, refreshPool, state.accessActive, state.isOnline, state.lockedRide]);
+
+  async function updateAvailability(update: Partial<Pick<PersistedDriverState, "isOnline" | "airConditioning">>) {
+    const next = { isOnline: update.isOnline ?? state.isOnline, airConditioning: update.airConditioning ?? state.airConditioning };
+    patchState(next);
+    const { error } = await supabase.rpc("set_driver_availability", { _online: next.isOnline, _has_ac: next.airConditioning });
+    if (error) setNotice("Réglage conservé sur l’appareil, synchronisation au retour du réseau.");
+    else if (next.isOnline) void refreshPool();
   }
 
-  function finishRide(success: boolean) {
-    patchState({ selectedRideId: null });
-    setNotice(success ? "Course validée. Mise en relation enregistrée." : "Discussion annulée. Le client peut republier sa demande.");
+  async function activateDay() {
+    setBusy(true);
+    const { error } = await supabase.rpc("activate_driver_day");
+    setBusy(false);
+    if (error) return setNotice(friendlyError(error.message));
+    patchState({ accessActive: true });
+    setNotice("Journée activée jusqu’à 23h59.");
+  }
+
+  async function takeRide(id: string) {
+    setBusy(true);
+    const { data, error } = await supabase.rpc("take_ride", { _ride_id: id });
+    setBusy(false);
+    const row = data?.[0];
+    if (error || !row) {
+      setNotice(friendlyError(error?.message));
+      void refreshPool();
+      return;
+    }
+    const offer = offers.find((item) => item.id === id);
+    patchState({ lockedRide: { id: row.id, client: row.client_name, phone: row.client_phone, distance: offer?.distance ?? null, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed } });
+  }
+
+  async function finishRide(success: boolean) {
+    if (!state.lockedRide) return;
+    setBusy(true);
+    const { error } = await supabase.rpc("close_ride", { _ride_id: state.lockedRide.id, _success: success });
+    setBusy(false);
+    if (error) return setNotice(friendlyError(error.message));
+    patchState({ lockedRide: null });
+    setNotice(success ? "Course validée. Mise en relation enregistrée au registre." : "Discussion annulée. La demande retourne dans le pool.");
+  }
+
+  const header = (
+    <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
+      <Button asChild variant="ghost" size="icon" className="border border-border bg-secondary">
+        <Link to="/" aria-label="Retour à l’accueil"><ArrowLeft /></Link>
+      </Button>
+      <div className="min-w-0 text-center">
+        <p className="truncate text-sm font-semibold">Allo Taxi<span className="text-primary">..?</span></p>
+        <p className="text-[10px] uppercase text-muted-foreground">Poste de conduite</p>
+      </div>
+      <span className={cn("flex items-center gap-1.5 text-[10px] font-semibold uppercase", networkOnline ? "text-live" : "text-primary")}>
+        {networkOnline ? <Wifi className="size-3.5" /> : <WifiOff className="size-3.5" />}
+        {networkOnline ? "Connecté" : "Hors réseau"}
+      </span>
+    </header>
+  );
+
+  let body: React.ReactNode;
+  if (loading || (user && driver === undefined)) {
+    body = <GateCard icon={<RefreshCw className="size-7 animate-spin" />} title="Chargement de votre poste…" />;
+  } else if (!user) {
+    body = <GateCard icon={<ShieldCheck className="size-7" />} title="Connectez-vous pour conduire." text="Votre compte chauffeur sécurise vos courses et votre abonnement du jour."><Button asChild className="mt-6 h-12 w-full font-bold shadow-gold"><Link to="/connexion" search={{ retour: "/chauffeur" }}>Se connecter</Link></Button></GateCard>;
+  } else if (!driver) {
+    body = <RegistrationForm userId={user.id} onDone={loadDriver} />;
+  } else if (!isApproved) {
+    body = <GateCard icon={<Clock3 className="size-7" />} title={driver.status === "suspended" ? "Compte suspendu." : "Dossier en cours de validation."} text={driver.status === "suspended" ? "Contactez l’administration Allo Taxi..?." : `Merci ${driver.first_name}. L’administration vérifie votre véhicule et votre plaque avant votre première course.`} />;
+  } else {
+    body = (
+      <section className="relative mt-6">
+        {state.accessActive && (
+          <div className="flex min-h-12 items-center gap-3 rounded-md border border-primary/35 bg-primary px-4 py-3 text-primary-foreground shadow-gold">
+            <p className="flex min-w-0 items-center gap-2 text-xs font-black uppercase sm:text-sm"><Sparkles className="size-4 shrink-0" />Accès actif — Expire à 23h59</p>
+          </div>
+        )}
+
+        <div className={cn("mt-5 space-y-5 transition duration-700", !state.accessActive && "pointer-events-none select-none blur-md")} aria-hidden={!state.accessActive}>
+          <ActivationDashboard state={state} onPatch={(update) => void updateAvailability(update)} />
+          {state.lockedRide ? (
+            <NegotiationScreen ride={state.lockedRide} busy={busy} onFinish={(success) => void finishRide(success)} />
+          ) : state.isOnline ? (
+            <RidePool offers={offers} airConditioning={state.airConditioning} busy={busy} onTake={(id) => void takeRide(id)} />
+          ) : (
+            <OfflinePanel />
+          )}
+        </div>
+
+        {!state.accessActive && (
+          <div className="absolute inset-0 z-20 grid min-h-[560px] place-items-center bg-background/55 px-5 backdrop-blur-md">
+            <div className="max-w-sm text-center">
+              <div className="mx-auto grid size-14 place-items-center rounded-md border border-primary/30 bg-primary/10 text-primary"><ShieldCheck className="size-7" /></div>
+              <p className="mt-5 text-xs font-semibold uppercase text-primary">Journée non activée</p>
+              <h1 className="mt-2 text-2xl font-semibold">Activez votre accès pour recevoir des courses.</h1>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">Activation valable jusqu’à 23h59, même en cas de coupure momentanée.</p>
+              <Button type="button" disabled={busy} onClick={() => void activateDay()} className="mt-6 h-14 w-full text-sm font-bold shadow-gold"><Banknote />Activer ma journée — 1 000 FCFA via Xfin</Button>
+            </div>
+          </div>
+        )}
+      </section>
+    );
   }
 
   return (
     <main className="relative min-h-svh overflow-hidden bg-background px-4 py-5 text-foreground sm:px-6 sm:py-8">
       <div className="taxi-grid pointer-events-none absolute inset-0" />
       <div className="relative mx-auto w-full max-w-4xl">
-        <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
-          <Button asChild variant="ghost" size="icon" className="border border-border bg-secondary">
-            <Link to="/" aria-label="Retour à l’accueil"><ArrowLeft /></Link>
-          </Button>
-          <div className="min-w-0 text-center">
-            <p className="truncate text-sm font-semibold">Allo Taxi<span className="text-primary">..?</span></p>
-            <p className="text-[10px] uppercase text-muted-foreground">Poste de conduite</p>
-          </div>
-          <span className={cn("flex items-center gap-1.5 text-[10px] font-semibold uppercase", networkOnline ? "text-live" : "text-primary")}>
-            {networkOnline ? <Wifi className="size-3.5" /> : <WifiOff className="size-3.5" />}
-            {networkOnline ? "Connecté" : "Hors réseau"}
-          </span>
-        </header>
-
+        {header}
         {!networkOnline && (
           <div className="mt-5 flex items-center gap-3 rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-xs text-primary" role="status">
-            <RefreshCw className="size-4 shrink-0" />Vos réglages restent disponibles et seront conservés sur cet appareil.
+            <RefreshCw className="size-4 shrink-0" />Vos réglages et votre course en cours restent disponibles sur cet appareil.
           </div>
         )}
-
         {notice && (
           <div className="mt-5 flex items-center gap-3 rounded-md border border-live/30 bg-live/10 px-4 py-3 text-sm text-live" role="status">
             <CheckCircle2 className="size-4 shrink-0" />{notice}
           </div>
         )}
-
-        <section className="relative mt-6">
-          <div className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-primary/35 bg-primary px-4 py-3 text-primary-foreground shadow-gold">
-            <p className="flex min-w-0 items-center gap-2 text-xs font-black uppercase sm:text-sm"><Sparkles className="size-4 shrink-0" />Accès actif — Expire à 23h59</p>
-            <Button type="button" variant="ghost" onClick={() => patchState({ accessActive: false, isOnline: false })} className="h-7 shrink-0 px-2 text-[10px] text-primary-foreground hover:bg-background/10 hover:text-primary-foreground">Tester inactif</Button>
-          </div>
-
-          <div className={cn("mt-5 space-y-5 transition duration-700", !state.accessActive && "pointer-events-none select-none blur-md")} aria-hidden={!state.accessActive}>
-            <ActivationDashboard state={state} onPatch={patchState} />
-
-            {selectedRide ? (
-              <NegotiationScreen ride={selectedRide} onFinish={finishRide} />
-            ) : state.isOnline ? (
-              <RidePool offers={visibleOffers} airConditioning={state.airConditioning} onTake={(id) => patchState({ selectedRideId: id })} />
-            ) : (
-              <OfflinePanel />
-            )}
-          </div>
-
-          {!state.accessActive && (
-            <div className="absolute inset-0 z-20 grid min-h-[560px] place-items-center bg-background/55 px-5 backdrop-blur-md">
-              <div className="max-w-sm text-center">
-                <div className="mx-auto grid size-14 place-items-center rounded-md border border-primary/30 bg-primary/10 text-primary"><ShieldCheck className="size-7" /></div>
-                <p className="mt-5 text-xs font-semibold uppercase text-primary">Journée non activée</p>
-                <h1 className="mt-2 text-2xl font-semibold">Activez votre accès pour recevoir des courses.</h1>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">Activation valable jusqu’à 23h59, même en cas de coupure momentanée.</p>
-                <Button type="button" onClick={() => patchState({ accessActive: true })} className="mt-6 h-14 w-full text-sm font-bold shadow-gold"><Banknote />Activer ma journée — 1 000 FCFA via Xfin</Button>
-              </div>
-            </div>
-          )}
-        </section>
+        {body}
       </div>
     </main>
+  );
+}
+
+function GateCard({ icon, title, text, children }: { icon: React.ReactNode; title: string; text?: string; children?: React.ReactNode }) {
+  return (
+    <section className="glass-panel mx-auto mt-10 max-w-md p-8 text-center">
+      <div className="mx-auto grid size-14 place-items-center rounded-md border border-primary/30 bg-primary/10 text-primary">{icon}</div>
+      <h1 className="mt-5 text-2xl font-semibold">{title}</h1>
+      {text && <p className="mt-3 text-sm leading-6 text-muted-foreground">{text}</p>}
+      {children}
+    </section>
+  );
+}
+
+function RegistrationForm({ userId, onDone }: { userId: string; onDone: () => void }) {
+  const [form, setForm] = useState({ first_name: "", phone: "+241", vehicle_model: "", vehicle_plate: "", has_ac: true });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const parsed = registrationSchema.safeParse({ ...form, phone: form.phone.replace(/[\s-]/g, "") });
+    if (!parsed.success) return setError(parsed.error.issues[0]?.message ?? "Champs invalides.");
+    setBusy(true);
+    const { error: insertError } = await supabase.from("drivers").insert({ user_id: userId, ...parsed.data, vehicle_plate: parsed.data.vehicle_plate.toUpperCase(), has_ac: form.has_ac });
+    setBusy(false);
+    if (insertError) return setError("Enregistrement impossible. Réessayez.");
+    onDone();
+  }
+
+  return (
+    <section className="glass-panel mx-auto mt-8 max-w-lg p-6 sm:p-8">
+      <p className="text-xs font-semibold uppercase text-primary">Nouveau chauffeur</p>
+      <h1 className="mt-2 text-2xl font-semibold">Déclarez votre véhicule</h1>
+      <p className="mt-2 text-sm text-muted-foreground">Votre dossier sera validé par l’administration avant votre première course.</p>
+      <form onSubmit={submit} className="mt-6 grid gap-4" noValidate>
+        <label className="block"><span className="mb-2 block text-xs font-medium">Prénom</span><Input value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} maxLength={40} className="h-12" /></label>
+        <label className="block"><span className="mb-2 block text-xs font-medium">Téléphone WhatsApp</span><Input type="tel" inputMode="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} maxLength={16} className="h-12" /></label>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block"><span className="mb-2 block text-xs font-medium">Modèle du véhicule</span><Input value={form.vehicle_model} onChange={(e) => setForm({ ...form, vehicle_model: e.target.value })} placeholder="Toyota Corolla" maxLength={60} className="h-12" /></label>
+          <label className="block"><span className="mb-2 block text-xs font-medium">Plaque d’immatriculation</span><Input value={form.vehicle_plate} onChange={(e) => setForm({ ...form, vehicle_plate: e.target.value })} placeholder="1234 G 1A" maxLength={15} className="h-12 uppercase" /></label>
+        </div>
+        <label className="flex items-center justify-between gap-4 rounded-md border border-border bg-secondary/60 p-4"><span className="flex items-center gap-2 text-sm"><Snowflake className="size-4 text-primary" />Climatisation fonctionnelle</span><Switch checked={form.has_ac} onCheckedChange={(checked) => setForm({ ...form, has_ac: checked })} aria-label="Climatisation fonctionnelle" /></label>
+        {error && <p className="text-xs text-destructive" role="alert">{error}</p>}
+        <Button type="submit" disabled={busy} className="h-12 w-full font-bold shadow-gold">Envoyer mon dossier</Button>
+      </form>
+    </section>
   );
 }
 
@@ -225,7 +373,7 @@ function ActivationDashboard({ state, onPatch }: { state: PersistedDriverState; 
   );
 }
 
-function RidePool({ offers, airConditioning, onTake }: { offers: RideOffer[]; airConditioning: boolean; onTake: (id: string) => void }) {
+function RidePool({ offers, airConditioning, busy, onTake }: { offers: RideOffer[]; airConditioning: boolean; busy: boolean; onTake: (id: string) => void }) {
   return (
     <section className="animate-journey-in">
       <div className="mb-4 flex items-end justify-between gap-4">
@@ -233,18 +381,23 @@ function RidePool({ offers, airConditioning, onTake }: { offers: RideOffer[]; ai
         <span className="shrink-0 rounded-md border border-border bg-secondary px-3 py-1.5 text-[10px] text-muted-foreground">{offers.length} disponibles</span>
       </div>
       {!airConditioning && <p className="mb-4 flex items-center gap-2 text-xs text-muted-foreground"><Wind className="size-4 text-primary" />Les demandes exigeant la climatisation sont masquées.</p>}
+      {offers.length === 0 && <p className="glass-panel p-6 text-center text-sm text-muted-foreground">Aucune demande dans un rayon de 5 km. Actualisation automatique toutes les 10 secondes.</p>}
       <div className="space-y-4">
-        {offers.map((ride) => <RideCard key={ride.id} ride={ride} onTake={() => onTake(ride.id)} />)}
+        {offers.map((ride) => <RideCard key={ride.id} ride={ride} busy={busy} onTake={() => onTake(ride.id)} />)}
       </div>
     </section>
   );
 }
 
-function RideCard({ ride, onTake }: { ride: RideOffer; onTake: () => void }) {
+function distanceLabel(distance: number | null) {
+  return distance === null ? "Position non partagée" : `À ${distance.toFixed(1)} km de vous`;
+}
+
+function RideCard({ ride, busy, onTake }: { ride: RideOffer; busy: boolean; onTake: () => void }) {
   return (
     <article className="glass-panel p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-semibold text-primary"><MapPin className="size-3.5" />À {ride.distance.toFixed(1)} km de vous</span>
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-semibold text-primary"><MapPin className="size-3.5" />{distanceLabel(ride.distance)}</span>
         <div className="text-right"><p className="text-[10px] uppercase text-muted-foreground">Prix proposé</p><p className="mt-1 text-2xl font-black text-primary">{ride.price.toLocaleString("fr-FR")} <span className="text-sm">FCFA</span></p></div>
       </div>
       <RouteDetails ride={ride} />
@@ -253,13 +406,13 @@ function RideCard({ ride, onTake }: { ride: RideOffer; onTake: () => void }) {
           <RequirementBadge icon={<Banknote />} label={ride.payment} />
           <RequirementBadge icon={ride.airConditioning ? <Snowflake /> : <Wind />} label={ride.airConditioning ? "Climatisation exigée" : "Standard"} highlight={ride.airConditioning} />
         </div>
-        <Button type="button" onClick={onTake} className="h-11 w-full px-7 font-bold shadow-gold sm:w-auto">Prendre <Navigation /></Button>
+        <Button type="button" disabled={busy} onClick={onTake} className="h-11 w-full px-7 font-bold shadow-gold sm:w-auto">Prendre <Navigation /></Button>
       </div>
     </article>
   );
 }
 
-function NegotiationScreen({ ride, onFinish }: { ride: RideOffer; onFinish: (success: boolean) => void }) {
+function NegotiationScreen({ ride, busy, onFinish }: { ride: RideOffer; busy: boolean; onFinish: (success: boolean) => void }) {
   const message = encodeURIComponent(`Bonjour ${ride.client}, je suis votre chauffeur Allo Taxi..? Je souhaite confirmer votre trajet de ${ride.pickup} vers ${ride.destination}, au tarif proposé de ${ride.price.toLocaleString("fr-FR")} FCFA, règlement ${ride.payment}${ride.airConditioning ? ", avec climatisation" : ""}. Où puis-je vous retrouver précisément ?`);
   return (
     <section className="glass-panel animate-journey-in overflow-hidden">
@@ -269,7 +422,7 @@ function NegotiationScreen({ ride, onFinish }: { ride: RideOffer; onFinish: (suc
           <div className="mx-auto grid size-14 place-items-center rounded-md bg-primary/10 text-primary"><UserRound className="size-7" /></div>
           <p className="mt-4 text-xs font-semibold uppercase text-primary">Client à contacter</p>
           <h1 className="mt-2 text-3xl font-semibold">{ride.client}</h1>
-          <p className="mt-2 text-sm text-muted-foreground">À {ride.distance.toFixed(1)} km · Offre à {ride.price.toLocaleString("fr-FR")} FCFA</p>
+          <p className="mt-2 text-sm text-muted-foreground">{distanceLabel(ride.distance)} · Offre à {ride.price.toLocaleString("fr-FR")} FCFA</p>
         </div>
 
         <RouteDetails ride={ride} prominent />
@@ -280,14 +433,14 @@ function NegotiationScreen({ ride, onFinish }: { ride: RideOffer; onFinish: (suc
         </div>
 
         <Button asChild className="mt-6 h-14 w-full bg-live text-sm font-bold text-foreground shadow-live hover:bg-live/90">
-          <a href={`https://wa.me/${ride.phone}?text=${message}`} target="_blank" rel="noreferrer"><Phone />Ouvrir WhatsApp pour négocier</a>
+          <a href={`https://wa.me/${ride.phone.replace(/\D/g, "")}?text=${message}`} target="_blank" rel="noreferrer"><Phone />Ouvrir WhatsApp pour négocier</a>
         </Button>
 
         <div className="mt-7 border-t border-border pt-5">
-          <p className="mb-4 text-center text-xs leading-5 text-muted-foreground">Clôturez obligatoirement la discussion pour recevoir une nouvelle course.</p>
+          <p className="mb-4 text-center text-xs leading-5 text-muted-foreground">Clôturez obligatoirement la discussion pour recevoir une nouvelle course. Sans clôture sous 15 minutes, la course est libérée et une pénalité est enregistrée.</p>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Button type="button" variant="outline" onClick={() => onFinish(false)} className="min-h-12 whitespace-normal border-destructive/40 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"><XCircle />Annuler — Échec de la discussion</Button>
-            <Button type="button" onClick={() => onFinish(true)} className="min-h-12 whitespace-normal bg-live text-xs font-bold text-foreground hover:bg-live/90"><CheckCircle2 />Embarqué — Course validée</Button>
+            <Button type="button" disabled={busy} variant="outline" onClick={() => onFinish(false)} className="min-h-12 whitespace-normal border-destructive/40 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"><XCircle />Annuler — Échec de la discussion</Button>
+            <Button type="button" disabled={busy} onClick={() => onFinish(true)} className="min-h-12 whitespace-normal bg-live text-xs font-bold text-foreground hover:bg-live/90"><CheckCircle2 />Embarqué — Course validée</Button>
           </div>
         </div>
       </div>

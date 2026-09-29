@@ -24,9 +24,12 @@ import {
   UserCog,
   Users,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { LogOut } from "lucide-react";
 import { z } from "zod";
 
+import { useSession } from "@/hooks/use-session";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -92,8 +95,12 @@ type AuditRide = {
   timeline: { time: string; label: string }[];
 };
 
-const STORAGE_KEY = "allo-taxi-partner-config-v1";
-const DAILY_REVENUE = 73000;
+type Finance = {
+  todayRevenue: number;
+  activeDrivers: number;
+  months: { label: string; value: number }[];
+  myTodayShare: number;
+};
 
 const partnerSchema = z.object({
   type: z.enum(["associe_xfin", "associe_promoteur"]),
@@ -102,9 +109,12 @@ const partnerSchema = z.object({
   share: z.number().min(0, "La part ne peut pas être négative.").max(100, "La part ne peut pas dépasser 100 %.")
 });
 
-const defaultPartners: Record<PartnerType, Partner> = {
-  associe_xfin: { type: "associe_xfin", name: "XFin Gabon", phone: "+241 06 00 00 01", share: 20, active: true },
-  associe_promoteur: { type: "associe_promoteur", name: "Partenaire Promotion", phone: "+241 07 00 00 02", share: 10, active: true },
+const partnerKeys: Record<PartnerType, "xfin" | "promoteur"> = { associe_xfin: "xfin", associe_promoteur: "promoteur" };
+const keyToType = (key: string): PartnerType => (key === "xfin" ? "associe_xfin" : "associe_promoteur");
+
+const emptyPartners: Record<PartnerType, Partner> = {
+  associe_xfin: { type: "associe_xfin", name: "", phone: "+241", share: 0, active: true },
+  associe_promoteur: { type: "associe_promoteur", name: "", phone: "+241", share: 0, active: true },
 };
 
 const roleLabels: Record<AdminRole, string> = {
@@ -113,101 +123,61 @@ const roleLabels: Record<AdminRole, string> = {
   associe_promoteur: "Associé 2 · Promoteur",
 };
 
-const months = ["Avr", "Mai", "Juin", "Juil", "Août", "Sept"];
-const consolidatedRevenue = [1420000, 1670000, 1540000, 1980000, 2210000, 2380000];
-
-const auditRides: AuditRide[] = [
-  {
-    id: "AT-0929-041",
-    dateTime: "29/09/2026 · 21:12",
-    driver: { name: "Michel", phone: "+241074575494", vehicle: "Toyota Corolla", plate: "1234 G 1A" },
-    client: { name: "Amina", phone: "+241066128743" },
-    pickup: "Louis, Galerie Tsika",
-    destination: "Nzeng-Ayong, Rond-point",
-    price: 2500,
-    status: "boarded",
-    timeline: [
-      { time: "21:12:03", label: "Course publiée par la cliente" },
-      { time: "21:12:45", label: "Course acceptée par le taxi" },
-      { time: "21:12:46", label: "Redirection vers WhatsApp" },
-      { time: "21:14:22", label: "Chauffeur valide l’embarquement" },
-    ],
-  },
-  {
-    id: "AT-0929-036",
-    dateTime: "29/09/2026 · 18:47",
-    driver: { name: "Junior", phone: "+241062348175", vehicle: "Hyundai Accent", plate: "4821 G 2A" },
-    client: { name: "Mireille", phone: "+241074628190" },
-    pickup: "Charbonnages, Entrée SNI",
-    destination: "PK8, Carrefour IAI",
-    price: 3000,
-    status: "failed",
-    timeline: [
-      { time: "18:47:08", label: "Course publiée par la cliente" },
-      { time: "18:47:51", label: "Course acceptée par le taxi" },
-      { time: "18:47:52", label: "Redirection vers WhatsApp" },
-      { time: "18:53:17", label: "Échec de la discussion déclaré" },
-    ],
-  },
-  {
-    id: "AT-0929-029",
-    dateTime: "29/09/2026 · 16:05",
-    driver: { name: "Cédric", phone: "+241066905432", vehicle: "Kia Rio", plate: "7318 G 1B" },
-    client: { name: "Sandrine", phone: "+241077341826" },
-    pickup: "Glass, Marché",
-    destination: "Owendo, SNI",
-    price: 3500,
-    status: "timeout",
-    timeline: [
-      { time: "16:05:11", label: "Course publiée par la cliente" },
-      { time: "16:05:58", label: "Course acceptée par le taxi" },
-      { time: "16:05:59", label: "Redirection vers WhatsApp" },
-      { time: "16:15:59", label: "Délai de négociation expiré" },
-    ],
-  },
-  {
-    id: "AT-0929-018",
-    dateTime: "29/09/2026 · 11:26",
-    driver: { name: "Patrick", phone: "+241074189635", vehicle: "Renault Logan", plate: "2096 G 3A" },
-    client: { name: "David", phone: "+241062754381" },
-    pickup: "Akébé, Carrefour Léon Mba",
-    destination: "Batterie IV, Ambassade",
-    price: 2000,
-    status: "boarded",
-    timeline: [
-      { time: "11:26:19", label: "Course publiée par le client" },
-      { time: "11:27:02", label: "Course acceptée par le taxi" },
-      { time: "11:27:03", label: "Redirection vers WhatsApp" },
-      { time: "11:29:41", label: "Chauffeur valide l’embarquement" },
-    ],
-  },
-];
+function lastSixMonths() {
+  const now = new Date();
+  return Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
+    return { key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`, label: date.toLocaleDateString("fr-FR", { month: "short" }).replace(".", "") };
+  });
+}
 
 function AdministrationDashboard() {
-  const [role, setRole] = useState<AdminRole>("super_admin");
-  const [partners, setPartners] = useState<Record<PartnerType, Partner>>(defaultPartners);
-  const [hydrated, setHydrated] = useState(false);
+  const { user, roles, loading, refreshRoles } = useSession();
+  const [partners, setPartners] = useState<Record<PartnerType, Partner>>(emptyPartners);
+  const [myPartnerType, setMyPartnerType] = useState<PartnerType | null>(null);
   const [editingType, setEditingType] = useState<PartnerType>("associe_xfin");
-  const [draft, setDraft] = useState<Partner>(defaultPartners.associe_xfin);
+  const [draft, setDraft] = useState<Partner>(emptyPartners.associe_xfin);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const [finance, setFinance] = useState<Finance>({ todayRevenue: 0, activeDrivers: 0, months: lastSixMonths().map((m) => ({ label: m.label, value: 0 })), myTodayShare: 0 });
 
-  useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as Record<PartnerType, Partner>;
-        if (parsed.associe_xfin && parsed.associe_promoteur) setPartners(parsed);
-      } catch {
-        localStorage.removeItem(STORAGE_KEY);
-      }
+  const isSuperAdmin = roles.includes("super_admin");
+  const isAssociate = roles.includes("associe");
+  const role: AdminRole | null = isSuperAdmin ? "super_admin" : isAssociate && myPartnerType ? myPartnerType : null;
+
+  const loadData = useCallback(async () => {
+    if (!isSuperAdmin && !isAssociate) return;
+    const [{ data: settings }, { data: split }, { data: today }] = await Promise.all([
+      supabase.from("associates_settings").select("*").is("deleted_at", null),
+      supabase.rpc("financial_dashboard_split"),
+      supabase.rpc("financial_today_split"),
+    ]);
+    const nextPartners = { ...emptyPartners };
+    for (const row of settings ?? []) {
+      const type = keyToType(row.partner_key);
+      nextPartners[type] = { type, name: row.display_name, phone: row.phone, share: Number(row.share_percent), active: row.is_active };
     }
-    setHydrated(true);
-  }, []);
+    setPartners(nextPartners);
+    const mine = (settings ?? []).find((row) => row.user_id === user?.id);
+    setMyPartnerType(mine ? keyToType(mine.partner_key) : null);
 
-  useEffect(() => {
-    if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(partners));
-  }, [hydrated, partners]);
+    const rows = split ?? [];
+    const months = lastSixMonths().map((month) => {
+      const monthRows = rows.filter((row) => row.month?.startsWith(month.key));
+      const value = isSuperAdmin
+        ? Number(monthRows[0]?.gross_revenue ?? 0)
+        : monthRows.reduce((sum, row) => sum + Number(row.partner_amount ?? 0), 0);
+      return { label: month.label, value };
+    });
+    setFinance({
+      todayRevenue: Number(rows[0]?.today_revenue ?? 0),
+      activeDrivers: Number(rows[0]?.active_drivers_today ?? 0),
+      months,
+      myTodayShare: (today ?? []).filter((row) => !isSuperAdmin || row.partner_key === mine?.partner_key).reduce((sum, row) => sum + Number(row.today_amount), 0),
+    });
+  }, [isAssociate, isSuperAdmin, user?.id]);
+
+  useEffect(() => { void loadData(); }, [loadData]);
 
   useEffect(() => {
     setDraft(partners[editingType]);
@@ -220,14 +190,7 @@ function AdministrationDashboard() {
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
-  const isSuperAdmin = role === "super_admin";
-  const currentPartner = role === "super_admin" ? null : partners[role];
-  const currentShare = currentPartner?.active ? currentPartner.share : 0;
-  const availableShare = Math.round(DAILY_REVENUE * currentShare / 100);
-  const chartValues = useMemo(
-    () => consolidatedRevenue.map((value) => isSuperAdmin ? value : Math.round(value * currentShare / 100)),
-    [currentShare, isSuperAdmin],
-  );
+  const currentShare = role && role !== "super_admin" && partners[role].active ? partners[role].share : 0;
 
   function updateDraft<K extends keyof Partner>(key: K, value: Partner[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -239,7 +202,7 @@ function AdministrationDashboard() {
     setDraft(partners[value]);
   }
 
-  function savePartner(event: FormEvent<HTMLFormElement>) {
+  async function savePartner(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const parsed = partnerSchema.safeParse(draft);
     if (!parsed.success) {
@@ -248,16 +211,30 @@ function AdministrationDashboard() {
       setErrors(nextErrors);
       return;
     }
-    const configured = { ...parsed.data, active: draft.active };
-    setPartners((current) => ({ ...current, [configured.type]: configured }));
+    const { error } = await supabase.from("associates_settings").upsert(
+      { partner_key: partnerKeys[parsed.data.type], display_name: parsed.data.name, phone: parsed.data.phone, share_percent: parsed.data.share, is_active: draft.active, updated_at: new Date().toISOString() },
+      { onConflict: "partner_key" },
+    );
+    if (error) return setNotice("Enregistrement impossible. Réessayez.");
     setNotice("Configuration enregistrée. Les calculs ont été actualisés.");
+    void loadData();
   }
 
-  function togglePartner(type: PartnerType) {
-    setPartners((current) => ({ ...current, [type]: { ...current[type], active: !current[type].active } }));
+  async function togglePartner(type: PartnerType) {
+    const { error } = await supabase.from("associates_settings").update({ is_active: !partners[type].active, updated_at: new Date().toISOString() }).eq("partner_key", partnerKeys[type]);
+    if (error) return setNotice("Associé non configuré : enregistrez d’abord sa fiche.");
+    void loadData();
   }
 
-  return (
+  async function claimSuperAdmin() {
+    const { data } = await supabase.rpc("claim_first_superadmin");
+    if (data) {
+      await refreshRoles();
+      setNotice("Compte Superadministrateur activé.");
+    } else setNotice("Un Superadministrateur existe déjà. Demandez-lui vos droits.");
+  }
+
+  const shell = (children: React.ReactNode) => (
     <main className="relative min-h-svh overflow-hidden bg-background px-4 py-5 text-foreground sm:px-6 sm:py-8">
       <div className="taxi-grid pointer-events-none absolute inset-0" />
       <div className="relative mx-auto w-full max-w-6xl">
@@ -269,88 +246,109 @@ function AdministrationDashboard() {
             <p className="truncate text-sm font-semibold">Allo Taxi<span className="text-primary">..?</span></p>
             <p className="text-[10px] uppercase text-muted-foreground">Centre de pilotage</p>
           </div>
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase text-live"><ShieldCheck className="size-4" />Accès protégé</div>
+          {user ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => void supabase.auth.signOut()} className="text-[10px] uppercase text-muted-foreground"><LogOut className="size-3.5" />Quitter</Button>
+          ) : (
+            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase text-live"><ShieldCheck className="size-4" />Accès protégé</div>
+          )}
         </header>
-
         <nav aria-label="Fil d’Ariane" className="mt-6 flex items-center gap-2 text-xs text-muted-foreground">
           <Link to="/" className="hover:text-foreground">Accueil</Link><ChevronRight className="size-3" /><span className="text-foreground">Administration</span><ChevronRight className="size-3" /><span className="text-primary">Finances</span>
         </nav>
-
-        <section className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
-          <div>
-            <p className="text-xs font-semibold uppercase text-primary">Pilotage financier</p>
-            <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">Vue des revenus et associés</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Les chiffres visibles s’adaptent strictement au rôle simulé.</p>
-          </div>
-          <label className="glass-panel block p-4">
-            <span className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase text-muted-foreground"><UserCog className="size-3.5 text-primary" />Rôle de test</span>
-            <Select value={role} onValueChange={(value) => setRole(value as AdminRole)}>
-              <SelectTrigger className="h-11" aria-label="Rôle connecté"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="super_admin">Superadministrateur</SelectItem>
-                <SelectItem value="associe_xfin">Associé 1 · XFin</SelectItem>
-                <SelectItem value="associe_promoteur">Associé 2 · Promoteur</SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
-        </section>
-
         {notice && <div className="mt-5 flex items-center gap-3 rounded-md border border-live/30 bg-live/10 px-4 py-3 text-sm text-live" role="status"><BadgeCheckIcon />{notice}</div>}
-
-        <div key={role} className="animate-journey-in">
-          <FinancialOverview role={role} share={currentShare} availableShare={availableShare} chartValues={chartValues} />
-
-          {isSuperAdmin ? (
-            <>
-              <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,.95fr)]">
-                <PartnerConfiguration
-                  draft={draft}
-                  errors={errors}
-                  partners={partners}
-                  onTypeChange={changePartnerType}
-                  onUpdate={updateDraft}
-                  onSave={savePartner}
-                  onToggle={togglePartner}
-                />
-                <AccessMatrix partners={partners} />
-              </div>
-              <SuperAdminModules />
-            </>
-          ) : (
-            <RestrictedAccess role={role} />
-          )}
-        </div>
+        {children}
       </div>
     </main>
   );
+
+  if (loading) return shell(<p className="mt-10 text-center text-sm text-muted-foreground">Chargement…</p>);
+  if (!user) {
+    return shell(
+      <section className="glass-panel mx-auto mt-10 max-w-md p-8 text-center">
+        <ShieldCheck className="mx-auto size-8 text-primary" />
+        <h1 className="mt-4 text-2xl font-semibold">Espace réservé</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Superadministrateur et associés uniquement.</p>
+        <Button asChild className="mt-6 h-12 w-full font-bold shadow-gold"><Link to="/connexion" search={{ retour: "/administration" }}>Se connecter</Link></Button>
+      </section>,
+    );
+  }
+  if (!role) {
+    return shell(
+      <section className="glass-panel mx-auto mt-10 max-w-md p-8 text-center">
+        <EyeOff className="mx-auto size-8 text-muted-foreground" />
+        <h1 className="mt-4 text-2xl font-semibold">Aucun droit d’administration</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{isAssociate ? "Votre compte associé n’est pas encore relié à une fiche associé." : "Ce compte n’a pas encore de rôle d’administration."}</p>
+        {!isAssociate && <Button type="button" variant="outline" onClick={() => void claimSuperAdmin()} className="mt-6 h-11 w-full text-xs">Premier lancement : devenir Superadministrateur</Button>}
+      </section>,
+    );
+  }
+
+  return shell(
+    <>
+      <section className="mt-5">
+        <p className="text-xs font-semibold uppercase text-primary">Pilotage financier</p>
+        <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">Vue des revenus et associés</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Connecté en tant que <strong className="text-foreground">{roleLabels[role]}</strong>. Les chiffres proviennent des abonnements réellement validés.</p>
+      </section>
+
+      <div className="animate-journey-in">
+        <FinancialOverview role={role} share={currentShare} finance={finance} />
+
+        {isSuperAdmin ? (
+          <>
+            <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,.95fr)]">
+              <PartnerConfiguration
+                draft={draft}
+                errors={errors}
+                partners={partners}
+                onTypeChange={changePartnerType}
+                onUpdate={updateDraft}
+                onSave={(event) => void savePartner(event)}
+                onToggle={(type) => void togglePartner(type)}
+              />
+              <AccessMatrix partners={partners} />
+            </div>
+            <SuperAdminModules onNotice={setNotice} />
+          </>
+        ) : (
+          <RestrictedAccess role={role as PartnerType} />
+        )}
+      </div>
+    </>,
+  );
 }
 
-function FinancialOverview({ role, share, availableShare, chartValues }: { role: AdminRole; share: number; availableShare: number; chartValues: number[] }) {
+function FinancialOverview({ role, share, finance }: { role: AdminRole; share: number; finance: Finance }) {
   const isSuperAdmin = role === "super_admin";
+  const values = finance.months.map((m) => m.value);
+  const last = values[5] ?? 0;
+  const previous = values[4] ?? 0;
+  const trend = previous > 0 ? `${last >= previous ? "+" : "−"} ${Math.abs(((last - previous) / previous) * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %` : "—";
   return (
     <section className="mt-7">
       <div className="grid gap-4 sm:grid-cols-3">
         {isSuperAdmin ? (
           <>
-            <MetricCard icon={<CircleDollarSign />} label="CA brut aujourd’hui" value={`${DAILY_REVENUE.toLocaleString("fr-FR")} FCFA`} detail="73 taxis actifs × 1 000 FCFA" featured />
-            <MetricCard icon={<CarFront />} label="Taxis actifs" value="73" detail="Accès journée validé" />
-            <MetricCard icon={<TrendingUp />} label="Évolution mensuelle" value="+ 7,7 %" detail="Par rapport au mois dernier" />
+            <MetricCard icon={<CircleDollarSign />} label="CA brut aujourd’hui" value={`${finance.todayRevenue.toLocaleString("fr-FR")} FCFA`} detail={`${finance.activeDrivers} taxis actifs × 1 000 FCFA`} featured />
+            <MetricCard icon={<CarFront />} label="Taxis actifs" value={String(finance.activeDrivers)} detail="Accès journée validé" />
+            <MetricCard icon={<TrendingUp />} label="Évolution mensuelle" value={trend} detail="Mois en cours vs mois dernier" />
           </>
         ) : (
           <div className="sm:col-span-3 rounded-md border border-primary/40 bg-primary p-6 text-primary-foreground shadow-gold sm:p-8">
             <div className="flex items-center gap-2 text-xs font-black uppercase"><Sparkles className="size-4" />{roleLabels[role]}</div>
-            <p className="mt-6 text-sm opacity-75">Votre part disponible aujourd’hui</p>
-            <p className="mt-2 text-4xl font-black tabular-nums sm:text-5xl">{availableShare.toLocaleString("fr-FR")} <span className="text-lg">FCFA</span></p>
+            <p className="mt-6 text-sm opacity-75">Votre part disponible ({share} % définis) aujourd’hui</p>
+            <p className="mt-2 text-4xl font-black tabular-nums sm:text-5xl">{finance.myTodayShare.toLocaleString("fr-FR")} <span className="text-lg">FCFA</span></p>
             <p className="mt-4 text-xs font-semibold">Part contractuelle active : {share} %</p>
           </div>
         )}
       </div>
-      <RevenueChart values={chartValues} role={role} />
+      <RevenueChart months={finance.months} role={role} />
     </section>
   );
 }
 
-function RevenueChart({ values, role }: { values: number[]; role: AdminRole }) {
+function RevenueChart({ months, role }: { months: Finance["months"]; role: AdminRole }) {
+  const values = months.map((m) => m.value);
   const max = Math.max(...values, 1);
   const total = values.reduce((sum, value) => sum + value, 0);
   return (
@@ -360,13 +358,13 @@ function RevenueChart({ values, role }: { values: number[]; role: AdminRole }) {
         <div className="text-right"><p className="text-[10px] uppercase text-muted-foreground">Cumul affiché</p><p className="mt-1 text-lg font-bold text-primary">{total.toLocaleString("fr-FR")} FCFA</p></div>
       </div>
       <div className="mt-7 grid h-56 grid-cols-6 items-end gap-2 sm:gap-4" aria-label="Graphique des gains des six derniers mois">
-        {values.map((value, index) => (
-          <div key={months[index]} className="flex h-full min-w-0 flex-col justify-end gap-2 text-center">
-            <span className="text-[9px] font-semibold text-muted-foreground">{compactMoney(value)}</span>
+        {months.map((month) => (
+          <div key={month.label} className="flex h-full min-w-0 flex-col justify-end gap-2 text-center">
+            <span className="text-[9px] font-semibold text-muted-foreground">{compactMoney(month.value)}</span>
             <div className="group relative mx-auto flex h-40 w-full max-w-14 items-end overflow-hidden rounded-sm bg-secondary">
-              <div className="w-full rounded-sm bg-primary transition-[height] duration-1000 ease-out group-hover:bg-live" style={{ height: `${Math.max(8, (value / max) * 100)}%` }} />
+              <div className="w-full rounded-sm bg-primary transition-[height] duration-1000 ease-out group-hover:bg-live" style={{ height: `${Math.max(4, (month.value / max) * 100)}%` }} />
             </div>
-            <span className="text-[10px] text-muted-foreground">{months[index]}</span>
+            <span className="text-[10px] capitalize text-muted-foreground">{month.label}</span>
           </div>
         ))}
       </div>
@@ -426,21 +424,92 @@ function AccessMatrix({ partners }: { partners: Record<PartnerType, Partner> }) 
   );
 }
 
-function SuperAdminModules() {
+function SuperAdminModules({ onNotice }: { onNotice: (message: string) => void }) {
   return (
     <>
       <AuditRegistry />
-      <section className="mt-4">
-      <ModuleCard icon={<ShieldCheck />} title="Modération" description="3 vérifications de profils en attente" />
-      </section>
+      <DriverModeration onNotice={onNotice} />
     </>
   );
 }
 
+type PendingDriver = { user_id: string; first_name: string; phone: string; vehicle_model: string; vehicle_plate: string; has_ac: boolean; created_at: string };
+
+function DriverModeration({ onNotice }: { onNotice: (message: string) => void }) {
+  const [drivers, setDrivers] = useState<PendingDriver[]>([]);
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("drivers").select("user_id, first_name, phone, vehicle_model, vehicle_plate, has_ac, created_at").eq("status", "pending").order("created_at");
+    setDrivers(data ?? []);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function decide(userId: string, approve: boolean) {
+    const { error } = await supabase.rpc("approve_driver", { _user_id: userId, _approve: approve });
+    if (error) return onNotice("Décision non enregistrée. Réessayez.");
+    onNotice(approve ? "Chauffeur validé : il peut activer sa journée." : "Dossier refusé et compte suspendu.");
+    void load();
+  }
+
+  return (
+    <section className="glass-panel mt-4 p-5 sm:p-7">
+      <p className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="size-4 text-live" />Modération des chauffeurs</p>
+      <p className="mt-1 text-xs text-muted-foreground">{drivers.length} dossier{drivers.length > 1 ? "s" : ""} en attente de validation</p>
+      <div className="mt-4 space-y-3">
+        {drivers.map((driver) => (
+          <div key={driver.user_id} className="flex flex-col gap-3 rounded-md border border-border bg-secondary/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">{driver.first_name} · {driver.vehicle_model}</p>
+              <p className="mt-1 text-xs font-bold uppercase text-primary">{driver.vehicle_plate}</p>
+              <p className="mt-1 text-[10px] text-muted-foreground">{maskPhone(driver.phone)} · {driver.has_ac ? "Climatisé" : "Standard"}</p>
+            </div>
+            <div className="grid shrink-0 grid-cols-2 gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => void decide(driver.user_id, false)} className="text-destructive">Refuser</Button>
+              <Button type="button" size="sm" onClick={() => void decide(driver.user_id, true)} className="bg-live text-foreground hover:bg-live/90">Valider</Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const auditStatusMap: Record<string, AuditStatus> = { completed: "boarded", canceled: "failed", timeout: "timeout" };
+
+function timeOf(value: string | null) {
+  return value ? new Date(value).toLocaleTimeString("fr-FR", { timeZone: "Africa/Libreville" }) : "";
+}
+
 function AuditRegistry() {
+  const [auditRides, setAuditRides] = useState<AuditRide[]>([]);
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
-  const [selectedIds, setSelectedIds] = useState<string[]>(auditRides.map((ride) => ride.id));
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeRide, setActiveRide] = useState<AuditRide | null>(null);
+
+  useEffect(() => {
+    supabase.rpc("export_full_ride_logs").then(({ data }) => {
+      const rows: AuditRide[] = (data ?? []).map((log) => {
+        const status = auditStatusMap[log.resolution_status] ?? "failed";
+        const timeline = [
+          log.published_at && { time: timeOf(log.published_at), label: "Course publiée par le client" },
+          log.matched_at && { time: timeOf(log.matched_at), label: "Course acceptée par le taxi · redirection WhatsApp" },
+          { time: timeOf(log.resolved_at), label: status === "boarded" ? "Chauffeur valide l’embarquement" : status === "timeout" ? "Délai de négociation expiré" : "Échec de la discussion déclaré" },
+        ].filter(Boolean) as { time: string; label: string }[];
+        return {
+          id: log.id,
+          dateTime: new Date(log.resolved_at).toLocaleString("fr-FR", { timeZone: "Africa/Libreville", dateStyle: "short", timeStyle: "short" }).replace(" ", " · "),
+          driver: { name: log.chauffeur_name ?? "—", phone: log.chauffeur_phone ?? "", vehicle: "", plate: log.vehicle_plate ?? "" },
+          client: { name: log.client_name, phone: log.client_phone },
+          pickup: log.pickup_location,
+          destination: log.dropoff_location,
+          price: log.proposed_price,
+          status,
+          timeline,
+        };
+      });
+      setAuditRides(rows);
+      setSelectedIds(rows.map((ride) => ride.id));
+    });
+  }, []);
 
   function togglePhone(key: string) {
     setRevealed((current) => ({ ...current, [key]: !current[key] }));
