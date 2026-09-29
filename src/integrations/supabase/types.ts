@@ -513,6 +513,7 @@ export type Database = {
         Args: { _has_ac: boolean; _online: boolean }
         Returns: undefined
       }
+      superadmin_exists: { Args: never; Returns: boolean }
       take_ride: {
         Args: { _ride_id: string }
         Returns: {

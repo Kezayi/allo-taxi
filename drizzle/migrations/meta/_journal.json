@@ -29,6 +29,13 @@
       "when": 1790698632931,
       "tag": "0003_financial_today_split",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790700312506,
+      "tag": "0004_superadmin_exists",
+      "breakpoints": true
     }
   ]
 }
