@@ -155,7 +155,7 @@ function DriverWorkspace() {
     patchState({
       accessActive: Boolean(sub),
       airConditioning: data.has_ac,
-      isOnline: sub ? undefined ?? true : false,
+      ...(sub ? {} : { isOnline: false }),
       lockedRide: current ? { id: current.id, client: current.client_name, phone: current.client_phone, distance: null, pickup: current.pickup_location, destination: current.dropoff_location, payment: current.payment_method, airConditioning: current.wants_ac, price: current.price_proposed } : null,
     });
   }, [patchState, user]);
