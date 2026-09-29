@@ -79,25 +79,80 @@ const paymentLabels: Record<Payment, string> = {
   moov: "MoovMoney",
 };
 
+type MatchedDriver = { firstName: string; vehicle: string; plate: string; phone: string };
+type ActiveRide = { id: string; token: string; ride: RideRequest; driver: MatchedDriver | null };
+
+const ACTIVE_RIDE_KEY = "allo-taxi-active-ride-v2";
+
+function getPosition(): Promise<{ lat: number; lng: number } | null> {
+  return new Promise((resolve) => {
+    if (!("geolocation" in navigator)) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
+    );
+  });
+}
+
 function ClientJourney() {
   const [step, setStep] = useState<Step>("request");
   const [identityOpen, setIdentityOpen] = useState(true);
   const [ride, setRide] = useState<RideRequest>(initialRide);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [lockedNotice, setLockedNotice] = useState(false);
+  const [active, setActive] = useState<ActiveRide | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const suggestedPrice = useMemo(() => {
     const route = `${ride.pickup} ${ride.destination}`.toLocaleLowerCase("fr");
     return route.includes("charbonnages") || route.includes("nzeng") ? 2000 : null;
   }, [ride.destination, ride.pickup]);
 
+  // Reprise après rechargement ou coupure réseau
   useEffect(() => {
-    if (sessionStorage.getItem("allo-taxi-active-discussion") === "true") setStep("matched");
+    const stored = sessionStorage.getItem(ACTIVE_RIDE_KEY);
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored) as ActiveRide;
+      setActive(parsed);
+      setRide(parsed.ride);
+      setStep(parsed.driver ? "matched" : "waiting");
+    } catch {
+      sessionStorage.removeItem(ACTIVE_RIDE_KEY);
+    }
   }, []);
 
   useEffect(() => {
+    if (active) sessionStorage.setItem(ACTIVE_RIDE_KEY, JSON.stringify(active));
+  }, [active]);
+
+  // Écoute temps réel du statut public de la course
+  const activeId = active?.id;
+  useEffect(() => {
+    if (!activeId || step !== "waiting") return;
+    const apply = (row: { status: string; chauffeur_first_name: string | null; vehicle_model: string | null; vehicle_plate: string | null; chauffeur_phone: string | null } | null) => {
+      if (!row) return;
+      if (row.status === "negotiating" && row.chauffeur_first_name) {
+        const driver = { firstName: row.chauffeur_first_name, vehicle: row.vehicle_model ?? "", plate: row.vehicle_plate ?? "", phone: row.chauffeur_phone ?? "" };
+        setActive((current) => current ? { ...current, driver } : current);
+        setStep("matched");
+      } else if (row.status === "canceled") {
+        resetAll();
+        setSubmitError("Votre demande a expiré. Vous pouvez la republier.");
+      }
+    };
+    supabase.from("ride_public_status").select("*").eq("ride_id", activeId).maybeSingle().then(({ data }) => apply(data));
+    const channel = supabase
+      .channel(`ride-${activeId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "ride_public_status", filter: `ride_id=eq.${activeId}` }, (payload) => apply(payload.new as Parameters<typeof apply>[0]))
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [activeId, step]);
+
+  useEffect(() => {
     if (step !== "matched") return;
-    sessionStorage.setItem("allo-taxi-active-discussion", "true");
     window.history.pushState({ alloTaxiLocked: true }, "", window.location.href);
     const holdDiscussion = () => {
       window.history.pushState({ alloTaxiLocked: true }, "", window.location.href);
@@ -112,7 +167,7 @@ function ClientJourney() {
     setErrors((current) => ({ ...current, [key]: "" }));
   }
 
-  function submitRequest(event: FormEvent<HTMLFormElement>) {
+  async function submitRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const parsed = requestSchema.safeParse(ride);
     if (!parsed.success) {
@@ -123,19 +178,51 @@ function ClientJourney() {
       return;
     }
     setErrors({});
+    setSubmitError(null);
+    setSubmitting(true);
+    const position = await getPosition();
+    const id = crypto.randomUUID();
+    const token = crypto.randomUUID();
+    const { error } = await supabase.from("rides").insert({
+      id,
+      access_token: token,
+      client_name: parsed.data.firstName,
+      client_phone: `+241${parsed.data.phone.replace(/\D/g, "")}`,
+      pickup_location: parsed.data.pickup,
+      dropoff_location: parsed.data.destination,
+      pickup_lat: position?.lat ?? null,
+      pickup_lng: position?.lng ?? null,
+      price_proposed: parsed.data.price,
+      payment_method: paymentLabels[parsed.data.payment],
+      wants_ac: parsed.data.comfort === "climatise",
+    });
+    setSubmitting(false);
+    if (error) {
+      setSubmitError(navigator.onLine ? "La demande n’a pas pu être publiée. Vérifiez vos informations." : "Pas de réseau. Réessayez dès le retour de la connexion.");
+      return;
+    }
     setRide(parsed.data);
+    setActive({ id, token, ride: parsed.data, driver: null });
     setStep("waiting");
   }
 
-  function cancelRequest() {
+  function resetAll() {
+    sessionStorage.removeItem(ACTIVE_RIDE_KEY);
+    setActive(null);
     setRide(initialRide);
     setErrors({});
     setIdentityOpen(true);
     setStep("request");
   }
 
+  async function cancelRequest() {
+    if (active) await supabase.rpc("cancel_ride_public", { _ride_id: active.id, _token: active.token });
+    resetAll();
+  }
+
+  const driver = active?.driver ?? null;
   const whatsappMessage = encodeURIComponent(
-    `Bonjour Michel, je suis ${ride.firstName}. Vous avez accepté ma course Allo Taxi..?\n\nDépart : ${ride.pickup}\nDestination : ${ride.destination}\nPrix proposé : ${ride.price.toLocaleString("fr-FR")} FCFA\nConfort : ${ride.comfort === "climatise" ? "Véhicule climatisé exigé" : "Standard avec ventilation"}\nRèglement : ${paymentLabels[ride.payment]}\n\nJe suis prêt(e) pour l’embarquement.`,
+    `Bonjour ${driver?.firstName ?? ""}, je suis ${ride.firstName}. Vous avez accepté ma course Allo Taxi..?\n\nDépart : ${ride.pickup}\nDestination : ${ride.destination}\nPrix proposé : ${ride.price.toLocaleString("fr-FR")} FCFA\nConfort : ${ride.comfort === "climatise" ? "Véhicule climatisé exigé" : "Standard avec ventilation"}\nRèglement : ${paymentLabels[ride.payment]}\n\nJe suis prêt(e) pour l’embarquement.`,
   );
 
   return (
