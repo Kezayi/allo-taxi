@@ -149,18 +149,22 @@ function ClientJourney() {
         setEta(row.eta_minutes != null ? { minutes: row.eta_minutes, km: row.driver_distance_km ?? null } : null);
         setStep("matched");
       } else if (row.status === "completed") {
-        if (changed) chimes.finished();
+        if (changed || first) chimes.finished();
+        resetAll();
+        setSubmitError("Course terminée. Merci d'avoir voyagé avec Allo Taxi !");
       } else if (row.status === "canceled") {
         resetAll();
         setSubmitError("Votre demande a expiré. Vous pouvez la republier.");
       }
     };
-    supabase.from("ride_public_status").select("*").eq("ride_id", activeId).maybeSingle().then(({ data }) => apply(data));
+    const poll = () => supabase.from("ride_public_status").select("*").eq("ride_id", activeId).maybeSingle().then(({ data }) => apply(data));
+    void poll();
+    const timer = window.setInterval(poll, 5000);
     const channel = supabase
       .channel(`ride-${activeId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "ride_public_status", filter: `ride_id=eq.${activeId}` }, (payload) => apply(payload.new as Parameters<typeof apply>[0]))
       .subscribe();
-    return () => { void supabase.removeChannel(channel); };
+    return () => { window.clearInterval(timer); void supabase.removeChannel(channel); };
   }, [activeId, listening]);
 
   useEffect(() => {
