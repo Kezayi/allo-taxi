@@ -65,7 +65,7 @@ function Index() {
     <main className="relative min-h-svh overflow-hidden bg-background text-foreground">
       <div className="taxi-grid pointer-events-none absolute inset-0" />
       <div className="relative mx-auto grid min-h-svh w-full max-w-7xl gap-10 px-5 py-6 sm:px-8 lg:grid-cols-[minmax(0,1fr)_minmax(420px,500px)] lg:items-center lg:gap-16 lg:px-12 lg:py-10">
-        <section className="flex min-w-0 flex-col justify-between gap-10 lg:min-h-[78svh]">
+        <section className="flex min-w-0 flex-col justify-between gap-10">
           <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4">
             <div className="flex min-w-0 items-center gap-3">
               <div className="grid size-10 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground shadow-gold">
