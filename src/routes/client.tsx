@@ -288,11 +288,13 @@ function StepRail({ step }: { step: Step }) {
   );
 }
 
-function RequestScreen({ ride, errors, identityOpen, suggestedPrice, onIdentityToggle, onUpdate, onSubmit }: {
+function RequestScreen({ ride, errors, identityOpen, suggestedPrice, submitting, submitError, onIdentityToggle, onUpdate, onSubmit }: {
   ride: RideRequest;
   errors: Record<string, string>;
   identityOpen: boolean;
   suggestedPrice: number | null;
+  submitting: boolean;
+  submitError: string | null;
   onIdentityToggle: () => void;
   onUpdate: <K extends keyof RideRequest>(key: K, value: RideRequest[K]) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -361,13 +363,15 @@ function RequestScreen({ ride, errors, identityOpen, suggestedPrice, onIdentityT
           {errors["price"] && <p className="mt-2 text-xs text-destructive">{errors["price"]}</p>}
         </section>
 
-        <Button type="submit" className="h-14 w-full text-base font-semibold shadow-gold">Diffuser ma demande <Navigation /></Button>
+        {submitError && <p className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive" role="alert">{submitError}</p>}
+        <Button type="submit" disabled={submitting} className="h-14 w-full text-base font-semibold shadow-gold">{submitting ? "Publication en cours…" : "Diffuser ma demande"} <Navigation /></Button>
+        <p className="text-center text-[10px] text-muted-foreground">Votre position est demandée pour prévenir les chauffeurs les plus proches.</p>
       </form>
     </section>
   );
 }
 
-function WaitingScreen({ ride, onCancel, onSimulate }: { ride: RideRequest; onCancel: () => void; onSimulate: () => void }) {
+function WaitingScreen({ ride, onCancel }: { ride: RideRequest; onCancel: () => void }) {
   return (
     <section className="glass-panel p-5 text-center sm:p-8">
       <div className="mx-auto grid size-52 place-items-center" aria-label="Recherche de chauffeurs en cours">
@@ -381,20 +385,19 @@ function WaitingScreen({ ride, onCancel, onSimulate }: { ride: RideRequest; onCa
       </div>
       <p className="text-xs font-semibold uppercase text-live">Demande publiée</p>
       <h1 className="mx-auto mt-3 max-w-md text-2xl font-semibold sm:text-3xl">Les taximen à proximité étudient votre offre.</h1>
-      <p className="mt-3 text-sm text-muted-foreground">Gardez cet écran ouvert quelques instants.</p>
+      <p className="mt-3 text-sm text-muted-foreground">Gardez cet écran ouvert : il bascule automatiquement dès qu’un chauffeur accepte.</p>
 
       <RideSummary ride={ride} />
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2">
-        <Button type="button" variant="outline" onClick={onCancel} className="h-12"><X />Annuler ma demande</Button>
-        <Button type="button" onClick={onSimulate} className="h-12 shadow-gold">Simuler l’acceptation</Button>
+      <div className="mt-6">
+        <Button type="button" variant="outline" onClick={onCancel} className="h-12 w-full sm:w-auto sm:px-8"><X />Annuler ma demande</Button>
       </div>
-      <p className="mt-4 text-[10px] text-muted-foreground">La simulation est temporaire pour tester le parcours.</p>
     </section>
   );
 }
 
-function MatchedScreen({ ride, whatsappMessage, lockedNotice, onDismissLock }: { ride: RideRequest; whatsappMessage: string; lockedNotice: boolean; onDismissLock: () => void }) {
+function MatchedScreen({ ride, driver, whatsappMessage, lockedNotice, onDismissLock, onFinish }: { ride: RideRequest; driver: MatchedDriver; whatsappMessage: string; lockedNotice: boolean; onDismissLock: () => void; onFinish: () => void }) {
+  const waNumber = driver.phone.replace(/\D/g, "");
   return (
     <section className="glass-panel overflow-hidden">
       {lockedNotice && (
@@ -408,12 +411,12 @@ function MatchedScreen({ ride, whatsappMessage, lockedNotice, onDismissLock }: {
         </div>
 
         <article className="mt-7 grid grid-cols-[88px_minmax(0,1fr)] gap-4 rounded-md border border-border bg-secondary/70 p-4">
-          <img src={driverPortrait} alt="Michel, chauffeur Allo Taxi certifié" width={816} height={816} className="aspect-square size-[88px] rounded-md bg-background object-contain" />
+          <div role="img" aria-label={`Avatar de ${driver.firstName}, chauffeur certifié`} className="grid aspect-square size-[88px] place-items-center rounded-md bg-primary/15 text-3xl font-black text-primary">{driver.firstName.slice(0, 1).toUpperCase()}</div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2"><h2 className="truncate text-xl font-semibold">Michel</h2><BadgeCheck className="size-4 shrink-0 text-live" aria-label="Profil certifié" /></div>
-            <p className="mt-1 text-xs text-muted-foreground">Toyota Corolla · Gris métallisé</p>
-            <p className="mt-3 text-[10px] font-semibold uppercase text-muted-foreground">Plaque validée par l’IA</p>
-            <p className="mt-1 text-xl font-bold tracking-normal text-foreground">1234 G 1A</p>
+            <div className="flex items-center gap-2"><h2 className="truncate text-xl font-semibold">{driver.firstName}</h2><BadgeCheck className="size-4 shrink-0 text-live" aria-label="Profil certifié" /></div>
+            <p className="mt-1 text-xs text-muted-foreground">{driver.vehicle}</p>
+            <p className="mt-3 text-[10px] font-semibold uppercase text-muted-foreground">Plaque validée</p>
+            <p className="mt-1 text-xl font-bold tracking-normal text-foreground">{driver.plate}</p>
           </div>
         </article>
 
@@ -425,9 +428,10 @@ function MatchedScreen({ ride, whatsappMessage, lockedNotice, onDismissLock }: {
         </div>
 
         <Button asChild className="mt-5 h-14 w-full bg-live text-base font-semibold text-foreground shadow-live hover:bg-live/90">
-          <a href={`https://wa.me/?text=${whatsappMessage}`} target="_blank" rel="noreferrer">Ouvrir la discussion privée WhatsApp <ArrowLeft className="rotate-180" /></a>
+          <a href={`https://wa.me/${waNumber}?text=${whatsappMessage}`} target="_blank" rel="noreferrer">Ouvrir la discussion privée WhatsApp <ArrowLeft className="rotate-180" /></a>
         </Button>
         {lockedNotice && <Button type="button" variant="ghost" onClick={onDismissLock} className="mt-2 w-full text-xs text-muted-foreground">Rester sur cette course</Button>}
+        <Button type="button" variant="ghost" onClick={onFinish} className="mt-2 w-full text-xs text-muted-foreground">Course terminée — nouvelle demande</Button>
         <p className="mt-4 flex items-center justify-center gap-2 text-[10px] text-muted-foreground"><ShieldCheck className="size-3.5 text-live" />Votre numéro reste privé jusqu’à l’ouverture de WhatsApp.</p>
       </div>
     </section>
