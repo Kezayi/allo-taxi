@@ -434,13 +434,7 @@ function RequestScreen({ ride, errors, identityOpen, suggestedPrice, submitting,
           </div>
         </section>
 
-        <label className="glass-panel flex cursor-pointer items-start gap-3 p-5">
-          <input type="checkbox" checked={ride.shared} onChange={(event) => onUpdate("shared", event.target.checked)} className="mt-1 size-5 shrink-0 accent-[var(--color-primary)]" />
-          <span>
-            <span className="block text-sm font-semibold">J’accepte de partager le taxi</span>
-            <span className="mt-1 block text-xs leading-5 text-muted-foreground">Une fois à bord, le chauffeur pourra prendre jusqu’à 2 autres passagers allant dans la même direction. Votre prix ne change pas.</span>
-          </span>
-        </label>
+        <SharedRideOption checked={ride.shared} onChange={(v) => onUpdate("shared", v)} />
 
         <section className="glass-panel p-5">
           <p className="text-sm font-semibold">Mode de règlement</p>

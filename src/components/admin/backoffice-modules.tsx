@@ -242,6 +242,7 @@ export function SystemSettingsPanel({ settings, onSaved, onNotice }: { settings:
     <label className="block"><span className="mb-1 block text-xs font-medium">{label}</span><Input type="number" min={min} max={max} step={step} value={form[key]} onChange={(e) => setForm({ ...form, [key]: Number(e.target.value) })} className="h-12 text-lg font-bold tabular-nums" /><span className="mt-1 block text-[10px] text-muted-foreground">{hint}</span></label>
   );
   return (
+    <>
     <Panel icon={<Settings2 className="size-4 text-primary" />} title="Paramètres système" subtitle="Appliqués immédiatement aux chauffeurs et au dispatch.">
       <form onSubmit={save} className="grid gap-4 sm:grid-cols-3">
         {field("Forfait journalier (FCFA)", "Entre 100 et 100 000 FCFA", "dailyPrice", 100, 100000, 100)}
@@ -249,6 +250,26 @@ export function SystemSettingsPanel({ settings, onSaved, onNotice }: { settings:
         {field("Délai de négociation (min)", "Entre 1 et 240 minutes", "timeoutMin", 1, 240, 1)}
         <Button type="submit" disabled={busy} className="h-12 font-bold shadow-gold sm:col-span-3"><Save />Enregistrer les paramètres</Button>
       </form>
+    </Panel>
+    <SharedRidesToggle onNotice={onNotice} />
+    </>
+  );
+}
+
+function SharedRidesToggle({ onNotice }: { onNotice: Notice }) {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => { void supabase.rpc("shared_rides_enabled").then(({ data }) => setOn(Boolean(data))); }, []);
+  async function toggle() {
+    const next = !on;
+    const { error } = await supabase.rpc("set_shared_rides_enabled", { _on: next });
+    if (error) return onNotice("Changement impossible.");
+    setOn(next);
+    onNotice(next ? "Taxi partagé activé." : "Taxi partagé désactivé.");
+  }
+  return (
+    <Panel icon={<Users className="size-4 text-primary" />} title="Taxi partagé (option)" subtitle="Permet aux clients d’accepter d’autres passagers allant dans la même direction (3 places, prix inchangé)."
+      action={on === null ? <Loader2 className="size-4 animate-spin" /> : <Chip tone={on ? "live" : "muted"}>{on ? "Activé" : "Désactivé"}</Chip>}>
+      <Button onClick={() => void toggle()} disabled={on === null} variant={on ? "outline" : "default"} className="h-11 font-bold"><Power />{on ? "Désactiver le taxi partagé" : "Activer le taxi partagé"}</Button>
     </Panel>
   );
 }
