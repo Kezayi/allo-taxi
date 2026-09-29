@@ -119,7 +119,7 @@ function ClientJourney() {
       const nextErrors: Record<string, string> = {};
       for (const issue of parsed.error.issues) nextErrors[String(issue.path[0])] = issue.message;
       setErrors(nextErrors);
-      setIdentityOpen(Boolean(nextErrors.firstName || nextErrors.phone));
+      setIdentityOpen(Boolean(nextErrors["firstName"] || nextErrors["phone"]));
       return;
     }
     setErrors({});
@@ -224,8 +224,8 @@ function RequestScreen({ ride, errors, identityOpen, suggestedPrice, onIdentityT
           </Button>
           {identityOpen && (
             <div className="grid gap-4 border-t border-border px-5 py-5 sm:grid-cols-2">
-              <Field label="Prénom" error={errors.firstName}><Input value={ride.firstName} onChange={(event) => onUpdate("firstName", event.target.value)} maxLength={50} placeholder="Votre prénom" autoComplete="given-name" className="h-12" /></Field>
-              <Field label="Numéro de téléphone" error={errors.phone}>
+              <Field label="Prénom" error={errors["firstName"]}><Input value={ride.firstName} onChange={(event) => onUpdate("firstName", event.target.value)} maxLength={50} placeholder="Votre prénom" autoComplete="given-name" className="h-12" /></Field>
+              <Field label="Numéro de téléphone" error={errors["phone"]}>
                 <div className="grid grid-cols-[auto_minmax(0,1fr)]"><span className="flex h-12 items-center rounded-l-md border border-r-0 border-input bg-secondary px-3 text-sm font-semibold">+241</span><Input value={ride.phone} onChange={(event) => onUpdate("phone", event.target.value)} maxLength={14} type="tel" inputMode="tel" placeholder="06 00 00 00" autoComplete="tel" className="h-12 rounded-l-none" /></div>
               </Field>
             </div>
@@ -233,9 +233,9 @@ function RequestScreen({ ride, errors, identityOpen, suggestedPrice, onIdentityT
         </section>
 
         <section className="glass-panel space-y-4 p-5">
-          <Field label="📍 Où êtes-vous ?" error={errors.pickup}><Input value={ride.pickup} onChange={(event) => onUpdate("pickup", event.target.value)} maxLength={120} placeholder="Ex: Charbonnages, Entrée SNI" className="h-12" /></Field>
+          <Field label="📍 Où êtes-vous ?" error={errors["pickup"]}><Input value={ride.pickup} onChange={(event) => onUpdate("pickup", event.target.value)} maxLength={120} placeholder="Ex: Charbonnages, Entrée SNI" className="h-12" /></Field>
           <div className="ml-5 h-5 border-l border-dashed border-primary/50" />
-          <Field label="🏁 Où allez-vous ?" error={errors.destination}><Input value={ride.destination} onChange={(event) => onUpdate("destination", event.target.value)} maxLength={120} placeholder="Ex: Nzeng-Ayong, Rond-point" className="h-12" /></Field>
+          <Field label="🏁 Où allez-vous ?" error={errors["destination"]}><Input value={ride.destination} onChange={(event) => onUpdate("destination", event.target.value)} maxLength={120} placeholder="Ex: Nzeng-Ayong, Rond-point" className="h-12" /></Field>
         </section>
 
         <section className="glass-panel p-5">
@@ -269,7 +269,7 @@ function RequestScreen({ ride, errors, identityOpen, suggestedPrice, onIdentityT
               <Button type="button" variant="outline" size="icon" aria-label="Augmenter le prix de 100 FCFA" onClick={() => onUpdate("price", Math.min(100000, ride.price + 100))}><Plus /></Button>
             </div>
           </div>
-          {errors.price && <p className="mt-2 text-xs text-destructive">{errors.price}</p>}
+          {errors["price"] && <p className="mt-2 text-xs text-destructive">{errors["price"]}</p>}
         </section>
 
         <Button type="submit" className="h-14 w-full text-base font-semibold shadow-gold">Diffuser ma demande <Navigation /></Button>
@@ -374,6 +374,6 @@ function ChoiceButton({ active, onClick, icon, title, subtitle }: { active: bool
   );
 }
 
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+function Field({ label, error, children }: { label: string; error: string | undefined; children: React.ReactNode }) {
   return <label className="block"><span className="mb-2 block text-xs font-medium">{label}</span>{children}{error && <span className="mt-1.5 block text-xs text-destructive" role="alert">{error}</span>}</label>;
 }
