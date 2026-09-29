@@ -249,6 +249,8 @@ export type Database = {
         Row: {
           chauffeur_first_name: string | null
           chauffeur_phone: string | null
+          driver_distance_km: number | null
+          eta_minutes: number | null
           ride_id: string
           status: string
           updated_at: string
@@ -258,6 +260,8 @@ export type Database = {
         Insert: {
           chauffeur_first_name?: string | null
           chauffeur_phone?: string | null
+          driver_distance_km?: number | null
+          eta_minutes?: number | null
           ride_id: string
           status: string
           updated_at?: string
@@ -267,6 +271,8 @@ export type Database = {
         Update: {
           chauffeur_first_name?: string | null
           chauffeur_phone?: string | null
+          driver_distance_km?: number | null
+          eta_minutes?: number | null
           ride_id?: string
           status?: string
           updated_at?: string
@@ -447,6 +453,10 @@ export type Database = {
         Args: { _ride_id: string; _success: boolean }
         Returns: string
       }
+      compute_eta: {
+        Args: { _lat1: number; _lat2: number; _lng1: number; _lng2: number }
+        Returns: Record<string, unknown>
+      }
       export_full_ride_logs: {
         Args: never
         Returns: {
@@ -553,6 +563,10 @@ export type Database = {
           price_proposed: number
           wants_ac: boolean
         }[]
+      }
+      update_driver_position: {
+        Args: { _lat: number; _lng: number }
+        Returns: number
       }
       update_system_settings: {
         Args: { _daily_price: number; _radius_km: number; _timeout_min: number }

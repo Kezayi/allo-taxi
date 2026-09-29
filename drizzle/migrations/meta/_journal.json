@@ -43,6 +43,13 @@
       "when": 1790700996394,
       "tag": "0005_backoffice_settings_and_demo",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790702216951,
+      "tag": "0006_ride_eta",
+      "breakpoints": true
     }
   ]
 }
