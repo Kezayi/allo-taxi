@@ -14,3 +14,4 @@
 - Express rides are inserted anonymously into rides (insert-only RLS) and clients follow them via the PII-free ride_public_status table over Realtime; phones never become anon-readable.
 - Driver actions (activation, pool, take, close) go through SECURITY DEFINER RPCs that check has_role + approved driver; localStorage only caches UI state for offline resilience.
 - Administration derives its view from server-validated user_roles; finances come from financial_dashboard_split/financial_today_split and the audit from export_full_ride_logs (ride_logs is immutable by trigger).
+- Ride lifecycle is pending → negotiating → onboard (Embarqué) → completed (drop_off_ride logs to ride_logs); shared rides attach to the driver's anchor ride via anchor_ride_id and are gated server-side in get_localized_pool_for_driver/take_ride by ride_same_direction, so the lock can't be bypassed from the client.
