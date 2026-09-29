@@ -60,6 +60,7 @@ export type Database = {
           driver_id: string
           id: string
           is_active: boolean
+          is_demo: boolean
           reason: string
           ride_id: string | null
         }
@@ -69,6 +70,7 @@ export type Database = {
           driver_id: string
           id?: string
           is_active?: boolean
+          is_demo?: boolean
           reason: string
           ride_id?: string | null
         }
@@ -78,6 +80,7 @@ export type Database = {
           driver_id?: string
           id?: string
           is_active?: boolean
+          is_demo?: boolean
           reason?: string
           ride_id?: string | null
         }
@@ -90,6 +93,7 @@ export type Database = {
           first_name: string
           has_ac: boolean
           is_active: boolean
+          is_demo: boolean
           is_online: boolean
           last_lat: number | null
           last_lng: number | null
@@ -107,6 +111,7 @@ export type Database = {
           first_name: string
           has_ac?: boolean
           is_active?: boolean
+          is_demo?: boolean
           is_online?: boolean
           last_lat?: number | null
           last_lng?: number | null
@@ -124,6 +129,7 @@ export type Database = {
           first_name?: string
           has_ac?: boolean
           is_active?: boolean
+          is_demo?: boolean
           is_online?: boolean
           last_lat?: number | null
           last_lng?: number | null
@@ -185,6 +191,7 @@ export type Database = {
           client_phone: string
           dropoff_location: string
           id: string
+          is_demo: boolean
           matched_at: string | null
           payment_method: string | null
           pickup_location: string
@@ -204,6 +211,7 @@ export type Database = {
           client_phone: string
           dropoff_location: string
           id?: string
+          is_demo?: boolean
           matched_at?: string | null
           payment_method?: string | null
           pickup_location: string
@@ -223,6 +231,7 @@ export type Database = {
           client_phone?: string
           dropoff_location?: string
           id?: string
+          is_demo?: boolean
           matched_at?: string | null
           payment_method?: string | null
           pickup_location?: string
@@ -283,6 +292,7 @@ export type Database = {
           created_at: string
           dropoff_location: string
           id: string
+          is_demo: boolean
           payment_method: string
           pickup_lat: number | null
           pickup_lng: number | null
@@ -302,6 +312,7 @@ export type Database = {
           created_at?: string
           dropoff_location: string
           id?: string
+          is_demo?: boolean
           payment_method: string
           pickup_lat?: number | null
           pickup_lng?: number | null
@@ -321,6 +332,7 @@ export type Database = {
           created_at?: string
           dropoff_location?: string
           id?: string
+          is_demo?: boolean
           payment_method?: string
           pickup_lat?: number | null
           pickup_lng?: number | null
@@ -341,6 +353,7 @@ export type Database = {
           day: string
           driver_id: string
           id: string
+          is_demo: boolean
           provider: string
           status: string
         }
@@ -350,6 +363,7 @@ export type Database = {
           day?: string
           driver_id: string
           id?: string
+          is_demo?: boolean
           provider?: string
           status?: string
         }
@@ -359,6 +373,7 @@ export type Database = {
           day?: string
           driver_id?: string
           id?: string
+          is_demo?: boolean
           provider?: string
           status?: string
         }
@@ -442,6 +457,7 @@ export type Database = {
           client_phone: string
           dropoff_location: string
           id: string
+          is_demo: boolean
           matched_at: string | null
           payment_method: string | null
           pickup_location: string
@@ -502,6 +518,7 @@ export type Database = {
         Returns: boolean
       }
       is_active_driver: { Args: { _uid: string }; Returns: boolean }
+      load_demo_data: { Args: never; Returns: undefined }
       log_ride_resolution: {
         Args: {
           _resolution: string
@@ -509,10 +526,20 @@ export type Database = {
         }
         Returns: undefined
       }
+      reset_demo_data: { Args: never; Returns: undefined }
+      set_driver_active: {
+        Args: { _active: boolean; _user_id: string }
+        Returns: undefined
+      }
       set_driver_availability: {
         Args: { _has_ac: boolean; _online: boolean }
         Returns: undefined
       }
+      set_penalty_active: {
+        Args: { _active: boolean; _id: string }
+        Returns: undefined
+      }
+      setting_num: { Args: { _default: number; _key: string }; Returns: number }
       superadmin_exists: { Args: never; Returns: boolean }
       take_ride: {
         Args: { _ride_id: string }
@@ -526,6 +553,10 @@ export type Database = {
           price_proposed: number
           wants_ac: boolean
         }[]
+      }
+      update_system_settings: {
+        Args: { _daily_price: number; _radius_km: number; _timeout_min: number }
+        Returns: undefined
       }
     }
     Enums: {
