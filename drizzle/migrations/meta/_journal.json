@@ -57,6 +57,13 @@
       "when": 1790710689645,
       "tag": "0007_client_single_active_ride_and_public_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790712435240,
+      "tag": "0008_shared_rides_same_direction",
+      "breakpoints": true
     }
   ]
 }

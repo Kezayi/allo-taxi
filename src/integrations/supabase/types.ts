@@ -292,10 +292,15 @@ export type Database = {
       rides: {
         Row: {
           access_token: string
+          allow_sharing: boolean
+          anchor_ride_id: string | null
+          boarded_at: string | null
           chauffeur_id: string | null
           client_name: string
           client_phone: string
           created_at: string
+          dropoff_lat: number | null
+          dropoff_lng: number | null
           dropoff_location: string
           id: string
           is_demo: boolean
@@ -312,10 +317,15 @@ export type Database = {
         }
         Insert: {
           access_token: string
+          allow_sharing?: boolean
+          anchor_ride_id?: string | null
+          boarded_at?: string | null
           chauffeur_id?: string | null
           client_name: string
           client_phone: string
           created_at?: string
+          dropoff_lat?: number | null
+          dropoff_lng?: number | null
           dropoff_location: string
           id?: string
           is_demo?: boolean
@@ -332,10 +342,15 @@ export type Database = {
         }
         Update: {
           access_token?: string
+          allow_sharing?: boolean
+          anchor_ride_id?: string | null
+          boarded_at?: string | null
           chauffeur_id?: string | null
           client_name?: string
           client_phone?: string
           created_at?: string
+          dropoff_lat?: number | null
+          dropoff_lng?: number | null
           dropoff_location?: string
           id?: string
           is_demo?: boolean
@@ -443,6 +458,10 @@ export type Database = {
         Args: { _approve: boolean; _user_id: string }
         Returns: undefined
       }
+      bearing_deg: {
+        Args: { _lat1: number; _lat2: number; _lng1: number; _lng2: number }
+        Returns: number
+      }
       cancel_ride_public: {
         Args: { _ride_id: string; _token: string }
         Returns: boolean
@@ -457,6 +476,41 @@ export type Database = {
         Args: { _lat1: number; _lat2: number; _lng1: number; _lng2: number }
         Returns: Record<string, unknown>
       }
+      driver_anchor_ride: {
+        Args: { _uid: string }
+        Returns: {
+          access_token: string
+          allow_sharing: boolean
+          anchor_ride_id: string | null
+          boarded_at: string | null
+          chauffeur_id: string | null
+          client_name: string
+          client_phone: string
+          created_at: string
+          dropoff_lat: number | null
+          dropoff_lng: number | null
+          dropoff_location: string
+          id: string
+          is_demo: boolean
+          payment_method: string
+          pickup_lat: number | null
+          pickup_lng: number | null
+          pickup_location: string
+          price_proposed: number
+          resolved_at: string | null
+          started_negotiation_at: string | null
+          status: string
+          updated_at: string
+          wants_ac: boolean
+        }
+        SetofOptions: {
+          from: "*"
+          to: "rides"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      drop_off_ride: { Args: { _ride_id: string }; Returns: string }
       export_full_ride_logs: {
         Args: never
         Returns: {
@@ -536,6 +590,10 @@ export type Database = {
         Returns: boolean
       }
       is_active_driver: { Args: { _uid: string }; Returns: boolean }
+      km_between: {
+        Args: { _lat1: number; _lat2: number; _lng1: number; _lng2: number }
+        Returns: number
+      }
       load_demo_data: { Args: never; Returns: undefined }
       log_ride_resolution: {
         Args: {
@@ -545,6 +603,13 @@ export type Database = {
         Returns: undefined
       }
       reset_demo_data: { Args: never; Returns: undefined }
+      ride_same_direction: {
+        Args: {
+          a: Database["public"]["Tables"]["rides"]["Row"]
+          c: Database["public"]["Tables"]["rides"]["Row"]
+        }
+        Returns: boolean
+      }
       set_driver_active: {
         Args: { _active: boolean; _user_id: string }
         Returns: undefined
