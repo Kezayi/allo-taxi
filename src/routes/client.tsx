@@ -129,6 +129,8 @@ function ClientJourney() {
   const [ride, setRide] = useState<RideRequest>(initialRide);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [lockedNotice, setLockedNotice] = useState(false);
+  const [relaunched, setRelaunched] = useState(false);
+  useEffect(() => { if (step !== "waiting") setRelaunched(false); }, [step]);
   const [active, setActive] = useState<ActiveRide | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -178,6 +180,15 @@ function ClientJourney() {
         const base = updatedAt ? Math.min(Date.parse(updatedAt), Date.now()) : Date.now();
         setEta(row.eta_minutes != null ? { minutes: row.eta_minutes, km: row.driver_distance_km ?? null, arrivalAt: base + row.eta_minutes * 60000 } : null);
         setStep("matched");
+      } else if (row.status === "pending") {
+        // Discussion échouée côté chauffeur : la course est relancée dans le pool
+        setActive((current) => {
+          if (current?.driver) setRelaunched(true);
+          return current ? { ...current, driver: null } : current;
+        });
+        setEta(null);
+        setLockedNotice(false);
+        setStep("waiting");
       } else if (row.status === "completed") {
         if (changed || first) chimes.finished();
         resetAll();
@@ -313,7 +324,14 @@ function ClientJourney() {
             />
           )}
           {step === "waiting" && (
-            <WaitingScreen ride={ride} onCancel={cancelRequest} />
+            <>
+              {relaunched && (
+                <div className="mb-4 rounded-md border border-primary/30 bg-primary/10 p-4 text-center text-sm" role="status">
+                  Le chauffeur n’a pas pu finaliser la course. <strong>Votre demande est relancée</strong> auprès des autres taximen.
+                </div>
+              )}
+              <WaitingScreen ride={ride} onCancel={cancelRequest} />
+            </>
           )}
           {step === "matched" && driver && (
             <MatchedScreen ride={ride} driver={driver} eta={eta} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} onCancel={cancelRequest} />
