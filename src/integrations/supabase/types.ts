@@ -520,6 +520,14 @@ export type Database = {
           wants_ac: boolean
         }[]
       }
+      get_public_activity: {
+        Args: never
+        Returns: {
+          active_passengers: number
+          drivers_online: number
+          matches_today: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
