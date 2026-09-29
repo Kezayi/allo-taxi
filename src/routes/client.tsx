@@ -52,6 +52,7 @@ type RideRequest = {
   comfort: Comfort;
   payment: Payment;
   price: number;
+  shared: boolean;
 };
 
 const requestSchema = z.object({
@@ -62,6 +63,7 @@ const requestSchema = z.object({
   comfort: z.enum(["standard", "climatise"]),
   payment: z.enum(["especes", "airtel", "moov"]),
   price: z.number().int().min(500, "Le prix minimum est de 500 FCFA.").max(100000, "Le prix maximum est de 100 000 FCFA."),
+  shared: z.boolean(),
 });
 
 const initialRide: RideRequest = {
@@ -72,6 +74,7 @@ const initialRide: RideRequest = {
   comfort: "standard",
   payment: "especes",
   price: 2000,
+  shared: false,
 };
 
 const paymentLabels: Record<Payment, string> = {
@@ -109,6 +112,20 @@ function Countdown({ arrivalAt }: { arrivalAt: number }) {
   return <strong className="font-mono text-3xl font-bold tabular-nums text-live">{mm}:{ss}</strong>;
 }
 
+// Coordonnées approximatives de la destination (OpenStreetMap, limité au Gabon) pour le partage « même direction »
+async function geocodeDestination(query: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ga&q=${encodeURIComponent(`${query}, Libreville`)}`, { signal: controller.signal, headers: { "Accept-Language": "fr" } });
+    window.clearTimeout(timer);
+    const [hit] = (await res.json()) as { lat: string; lon: string }[];
+    return hit ? { lat: Number(hit.lat), lng: Number(hit.lon) } : null;
+  } catch {
+    return null;
+  }
+}
+
 const ACTIVE_RIDE_KEY = "allo-taxi-active-ride-v2";
 
 function getPosition(): Promise<{ lat: number; lng: number } | null> {
@@ -125,6 +142,7 @@ function getPosition(): Promise<{ lat: number; lng: number } | null> {
 function ClientJourney() {
   const [step, setStep] = useState<Step>("request");
   const [eta, setEta] = useState<Eta | null>(null);
+  const [onboard, setOnboard] = useState(false);
   const [identityOpen, setIdentityOpen] = useState(true);
   const [ride, setRide] = useState<RideRequest>(initialRide);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -169,7 +187,14 @@ function ClientJourney() {
       const changed = lastStatus !== null && lastStatus !== row.status;
       const first = lastStatus === null;
       lastStatus = row.status;
-      if (row.status === "negotiating" && row.chauffeur_first_name) {
+      if (row.status === "onboard") {
+        setOnboard(true);
+        setLockedNotice(false);
+        const driver = { firstName: row.chauffeur_first_name ?? "", vehicle: row.vehicle_model ?? "", plate: row.vehicle_plate ?? "", phone: row.chauffeur_phone ?? "" };
+        setActive((current) => current ? { ...current, driver } : current);
+        setStep("matched");
+      } else if (row.status === "negotiating" && row.chauffeur_first_name) {
+        setOnboard(false);
         if (changed || (first && step === "waiting")) {
           chimes.accepted();
           notifyAccepted(row.chauffeur_first_name, row.eta_minutes ?? null);
@@ -191,6 +216,7 @@ function ClientJourney() {
         setStep("waiting");
       } else if (row.status === "completed") {
         if (changed || first) chimes.finished();
+        setOnboard(false);
         resetAll();
         setSubmitError("Course terminée. Merci d'avoir voyagé avec Allo Taxi !");
       } else if (row.status === "canceled") {
@@ -239,7 +265,7 @@ function ClientJourney() {
     if (active) { setStep(active.driver ? "matched" : "waiting"); return; }
     askNotificationPermission();
     setSubmitting(true);
-    const position = await getPosition();
+    const [position, dropoff] = await Promise.all([getPosition(), parsed.data.shared ? geocodeDestination(parsed.data.destination) : Promise.resolve(null)]);
     const id = crypto.randomUUID();
     const token = crypto.randomUUID();
     const { error } = await supabase.from("rides").insert({
@@ -254,6 +280,9 @@ function ClientJourney() {
       price_proposed: parsed.data.price,
       payment_method: paymentLabels[parsed.data.payment],
       wants_ac: parsed.data.comfort === "climatise",
+      allow_sharing: parsed.data.shared,
+      dropoff_lat: dropoff?.lat ?? null,
+      dropoff_lng: dropoff?.lng ?? null,
     });
     setSubmitting(false);
     if (error) {
@@ -334,7 +363,7 @@ function ClientJourney() {
             </>
           )}
           {step === "matched" && driver && (
-            <MatchedScreen ride={ride} driver={driver} eta={eta} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} onCancel={cancelRequest} />
+            <MatchedScreen ride={ride} driver={driver} eta={onboard ? null : eta} onboard={onboard} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} onCancel={cancelRequest} />
           )}
         </div>
       </div>
@@ -405,6 +434,14 @@ function RequestScreen({ ride, errors, identityOpen, suggestedPrice, submitting,
           </div>
         </section>
 
+        <label className="glass-panel flex cursor-pointer items-start gap-3 p-5">
+          <input type="checkbox" checked={ride.shared} onChange={(event) => onUpdate("shared", event.target.checked)} className="mt-1 size-5 shrink-0 accent-[var(--color-primary)]" />
+          <span>
+            <span className="block text-sm font-semibold">J’accepte de partager le taxi</span>
+            <span className="mt-1 block text-xs leading-5 text-muted-foreground">Une fois à bord, le chauffeur pourra prendre jusqu’à 2 autres passagers allant dans la même direction. Votre prix ne change pas.</span>
+          </span>
+        </label>
+
         <section className="glass-panel p-5">
           <p className="text-sm font-semibold">Mode de règlement</p>
           <div className="mt-3 grid grid-cols-3 gap-2">
@@ -464,7 +501,7 @@ function WaitingScreen({ ride, onCancel }: { ride: RideRequest; onCancel: () => 
   );
 }
 
-function MatchedScreen({ ride, driver, eta, whatsappMessage, lockedNotice, onDismissLock, onCancel }: { ride: RideRequest; driver: MatchedDriver; eta: Eta | null; whatsappMessage: string; lockedNotice: boolean; onDismissLock: () => void; onCancel: () => void }) {
+function MatchedScreen({ ride, driver, eta, onboard, whatsappMessage, lockedNotice, onDismissLock, onCancel }: { ride: RideRequest; driver: MatchedDriver; eta: Eta | null; onboard: boolean; whatsappMessage: string; lockedNotice: boolean; onDismissLock: () => void; onCancel: () => void }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const waNumber = driver.phone.replace(/\D/g, "");
   return (
@@ -475,8 +512,9 @@ function MatchedScreen({ ride, driver, eta, whatsappMessage, lockedNotice, onDis
       <div className="p-5 sm:p-8">
         <div className="text-center">
           <div className="mx-auto grid size-14 place-items-center rounded-full bg-live/15 text-live"><BadgeCheck className="size-7" /></div>
-          <p className="mt-4 text-xs font-semibold uppercase text-live">Chauffeur trouvé</p>
-          <h1 className="mt-2 text-3xl font-semibold">Votre course est acceptée.</h1>
+          <p className="mt-4 text-xs font-semibold uppercase text-live">{onboard ? "À bord" : "Chauffeur trouvé"}</p>
+          <h1 className="mt-2 text-3xl font-semibold">{onboard ? `En route vers ${ride.destination}.` : "Votre course est acceptée."}</h1>
+          {onboard && ride.shared && <p className="mt-2 text-xs text-muted-foreground">Partage accepté : d’autres passagers allant dans votre direction peuvent monter.</p>}
         </div>
 
         <article className="mt-7 grid grid-cols-[88px_minmax(0,1fr)] gap-4 rounded-md border border-border bg-secondary/70 p-4">
@@ -491,7 +529,9 @@ function MatchedScreen({ ride, driver, eta, whatsappMessage, lockedNotice, onDis
 
         <div className="mt-4 flex items-center gap-4 rounded-md border border-live/30 bg-live/10 p-4" role="status" aria-live="polite">
           <span className="relative flex size-3 shrink-0"><span className="absolute inline-flex size-full animate-ping rounded-full bg-live opacity-60 motion-reduce:animate-none" /><span className="relative inline-flex size-3 rounded-full bg-live" /></span>
-          {eta ? (
+          {onboard ? (
+            <p className="text-sm">Bon trajet ! Vous serez notifié à l’arrivée à destination.</p>
+          ) : eta ? (
             <div className="text-sm leading-6"><p className="text-xs uppercase text-muted-foreground">Votre chauffeur arrive dans</p><Countdown arrivalAt={eta.arrivalAt} />{eta.km != null && <span className="ml-2 text-muted-foreground">· {eta.km < 1 ? `${Math.round(eta.km * 1000)} m` : `${eta.km.toFixed(1)} km`}</span>}</div>
           ) : (
             <p className="text-sm text-muted-foreground">Calcul du temps d’arrivée… (position GPS du chauffeur ou la vôtre indisponible)</p>
@@ -509,7 +549,7 @@ function MatchedScreen({ ride, driver, eta, whatsappMessage, lockedNotice, onDis
           <a href={`https://wa.me/${waNumber}?text=${whatsappMessage}`} target="_blank" rel="noreferrer">Ouvrir la discussion privée WhatsApp <ArrowLeft className="rotate-180" /></a>
         </Button>
         {lockedNotice && <Button type="button" variant="ghost" onClick={onDismissLock} className="mt-2 w-full text-xs text-muted-foreground">Rester sur cette course</Button>}
-        {confirmCancel ? (
+        {onboard ? null : confirmCancel ? (
           <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-center">
             <p className="text-xs">Le chauffeur est en route. Annuler vraiment la course ?</p>
             <div className="mt-2 grid grid-cols-2 gap-2">
