@@ -473,6 +473,14 @@ export type Database = {
           today_revenue: number
         }[]
       }
+      financial_today_split: {
+        Args: never
+        Returns: {
+          partner_key: string
+          share_percent: number
+          today_amount: number
+        }[]
+      }
       get_localized_pool_for_driver: {
         Args: { _lat: number; _lng: number; _radius_km?: number }
         Returns: {
