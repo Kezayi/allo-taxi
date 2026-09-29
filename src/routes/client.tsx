@@ -269,7 +269,7 @@ function ClientJourney() {
             <WaitingScreen ride={ride} onCancel={cancelRequest} />
           )}
           {step === "matched" && driver && (
-            <MatchedScreen ride={ride} driver={driver} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} onFinish={resetAll} />
+            <MatchedScreen ride={ride} driver={driver} eta={eta} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} onFinish={resetAll} />
           )}
         </div>
       </div>
