@@ -1,24 +1,8 @@
-import { z } from "zod";
-
 import { supabase } from "@/integrations/supabase/client";
 
-/** Gabon mobile number: 8 or 9 local digits after +241 (e.g. 074 57 54 94). */
-export const phoneSchema = z
-  .string()
-  .transform((v) => v.replace(/\D/g, "").replace(/^241/, ""))
-  .pipe(z.string().regex(/^0?\d{7,8}$/, "Numéro gabonais invalide."));
+import { toCredentials } from "./phone-credentials";
 
-export const pinSchema = z.string().regex(/^\d{4}$|^\d{6}$/, "Le code PIN doit contenir 4 ou 6 chiffres.");
-
-/**
- * Accounts are identified only by phone + PIN. Auth needs an internal identifier and
- * a password of at least 6 chars, so both are derived deterministically; no email is
- * ever sent (email confirmation is disabled) and the PIN is hashed by the auth service.
- */
-function toCredentials(phone: string, pin: string) {
-  const local = phoneSchema.parse(phone);
-  return { email: `241${local}@tel.allotaxi.app`, password: `AT#${pin}#pin`, phone: `+241${local}` };
-}
+export { phoneSchema, pinSchema } from "./phone-credentials";
 
 export async function signInWithPhonePin(phone: string, pin: string) {
   const { email, password } = toCredentials(phone, pin);
