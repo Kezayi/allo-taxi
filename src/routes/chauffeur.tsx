@@ -19,7 +19,8 @@ import {
   Wind,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { chimes } from "@/lib/chime";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
@@ -170,7 +171,12 @@ function DriverWorkspace() {
       if (error.message.includes("Abonnement")) patchState({ accessActive: false, isOnline: false });
       return;
     }
-    setOffers((data ?? []).map((row) => ({ id: row.id, client: "", phone: "", distance: row.distance_km, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed })));
+    const rows = data ?? [];
+    const fresh = rows.some((row) => !seenRideIds.current.has(row.id));
+    if (fresh && seenRideIds.current.size + (poolPrimed.current ? 1 : 0) > 0 && poolPrimed.current) chimes.newRide();
+    rows.forEach((row) => seenRideIds.current.add(row.id));
+    poolPrimed.current = true;
+    setOffers(rows.map((row) => ({ id: row.id, client: "", phone: "", distance: row.distance_km, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed })));
   }, [patchState]);
 
   useEffect(() => {
@@ -184,9 +190,16 @@ function DriverWorkspace() {
   const lockedId = state.lockedRide?.id;
   useEffect(() => {
     if (!lockedId || !networkOnline) return;
+    let arrived = false;
     const send = async () => {
       const position = await getPosition();
-      if (position) await supabase.rpc("update_driver_position", { _lat: position.lat, _lng: position.lng });
+      if (!position) return;
+      const { data: eta } = await supabase.rpc("update_driver_position", { _lat: position.lat, _lng: position.lng });
+      if (!arrived && typeof eta === "number" && eta <= 2) {
+        arrived = true;
+        chimes.arrived();
+        setNotice("Vous êtes arrivé au point de prise en charge.");
+      }
     };
     void send();
     const interval = window.setInterval(() => void send(), 20_000);
