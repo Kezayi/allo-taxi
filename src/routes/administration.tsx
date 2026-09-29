@@ -57,6 +57,17 @@ import {
 import { cn } from "@/lib/utils";
 import { useServerFn } from "@tanstack/react-start";
 import { provisionAssociateAccount } from "@/lib/associates.functions";
+import {
+  DemoDataControls,
+  DisputesAndSanctions,
+  FleetManagement,
+  LiveDispatch,
+  OverviewStats,
+  SystemSettingsPanel,
+  defaultSettings,
+  fetchSystemSettings,
+  type SystemSettings,
+} from "@/components/admin/backoffice-modules";
 
 export const Route = createFileRoute("/administration")({
   head: () => ({
@@ -196,6 +207,10 @@ function AdministrationDashboard() {
 
   const [associatePin, setAssociatePin] = useState("");
   const provisionAssociate = useServerFn(provisionAssociateAccount);
+  const [tab, setTab] = useState<AdminTab>("overview");
+  const [dataVersion, setDataVersion] = useState(0);
+  const [sysSettings, setSysSettings] = useState<SystemSettings>(defaultSettings);
+  useEffect(() => { if (user) void fetchSystemSettings().then(setSysSettings); }, [user]);
 
   function updateDraft<K extends keyof Partner>(key: K, value: Partner[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -267,7 +282,7 @@ function AdministrationDashboard() {
           )}
         </header>
         <nav aria-label="Fil d’Ariane" className="mt-6 flex items-center gap-2 text-xs text-muted-foreground">
-          <Link to="/" className="hover:text-foreground">Accueil</Link><ChevronRight className="size-3" /><span className="text-foreground">Administration</span><ChevronRight className="size-3" /><span className="text-primary">Finances</span>
+          <Link to="/" className="hover:text-foreground">Accueil</Link><ChevronRight className="size-3" /><span className="text-foreground">Administration</span><ChevronRight className="size-3" /><span className="text-primary">{isSuperAdmin ? adminTabs.find((t) => t.id === tab)?.label : "Finances"}</span>
         </nav>
         {notice && <div className="mt-5 flex items-center gap-3 rounded-md border border-live/30 bg-live/10 px-4 py-3 text-sm text-live" role="status"><BadgeCheckIcon />{notice}</div>}
         {children}
@@ -297,19 +312,48 @@ function AdministrationDashboard() {
     );
   }
 
+  if (!isSuperAdmin) {
+    return shell(
+      <>
+        <section className="mt-5">
+          <p className="text-xs font-semibold uppercase text-primary">Vue financière privée</p>
+          <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">Votre part des revenus</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Connecté en tant que <strong className="text-foreground">{roleLabels[role]}</strong>.</p>
+        </section>
+        <div className="animate-journey-in">
+          <FinancialOverview role={role} share={currentShare} finance={finance} dailyPrice={sysSettings.dailyPrice} />
+          <RestrictedAccess role={role as PartnerType} />
+        </div>
+      </>,
+    );
+  }
+
+  const current = adminTabs.find((t) => t.id === tab) ?? adminTabs[0]!;
   return shell(
     <>
       <section className="mt-5">
-        <p className="text-xs font-semibold uppercase text-primary">Pilotage financier</p>
-        <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">Vue des revenus et associés</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Connecté en tant que <strong className="text-foreground">{roleLabels[role]}</strong>. Les chiffres proviennent des abonnements réellement validés.</p>
+        <p className="text-xs font-semibold uppercase text-primary">Superadministrateur</p>
+        <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">{current.label}</h1>
       </section>
-
-      <div className="animate-journey-in">
-        <FinancialOverview role={role} share={currentShare} finance={finance} />
-
-        {isSuperAdmin ? (
+      <nav aria-label="Sections du Back-Office" className="mt-5 flex gap-1 overflow-x-auto rounded-md border border-border bg-secondary/70 p-1">
+        {adminTabs.map((t) => (
+          <Button key={t.id} type="button" variant="ghost" onClick={() => setTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
+            className={cn("h-10 shrink-0 px-3 text-xs text-muted-foreground", tab === t.id && "bg-card text-foreground shadow-sm hover:bg-card")}>{t.label}</Button>
+        ))}
+      </nav>
+      <div key={`${tab}-${dataVersion}`} className="animate-journey-in">
+        {tab === "overview" && (
           <>
+            <OverviewStats />
+            <FinancialOverview role={role} share={currentShare} finance={finance} dailyPrice={sysSettings.dailyPrice} />
+            <DemoDataControls onNotice={setNotice} onChanged={() => { setDataVersion((v) => v + 1); void loadData(); }} />
+          </>
+        )}
+        {tab === "fleet" && <FleetManagement onNotice={setNotice} maskPhone={maskPhone} />}
+        {tab === "dispatch" && <LiveDispatch timeoutMin={sysSettings.timeoutMin} />}
+        {tab === "finance" && (
+          <>
+            <FinancialOverview role={role} share={currentShare} finance={finance} dailyPrice={sysSettings.dailyPrice} />
             <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,.95fr)]">
               <PartnerConfiguration pin={associatePin} onPinChange={setAssociatePin}
                 draft={draft}
@@ -322,15 +366,24 @@ function AdministrationDashboard() {
               />
               <AccessMatrix partners={partners} />
             </div>
-            <SuperAdminModules onNotice={setNotice} />
           </>
-        ) : (
-          <RestrictedAccess role={role as PartnerType} />
         )}
+        {tab === "audit" && (<><AuditRegistry /><DisputesAndSanctions onNotice={setNotice} /></>)}
+        {tab === "settings" && <SystemSettingsPanel settings={sysSettings} onSaved={setSysSettings} onNotice={setNotice} />}
       </div>
     </>,
   );
 }
+
+const adminTabs = [
+  { id: "overview", label: "Vue d’ensemble" },
+  { id: "fleet", label: "Flotte de chauffeurs" },
+  { id: "dispatch", label: "Dispatch en direct" },
+  { id: "finance", label: "Finances & Associés" },
+  { id: "audit", label: "Registre d’Audit & Litiges" },
+  { id: "settings", label: "Paramètres système" },
+] as const;
+type AdminTab = (typeof adminTabs)[number]["id"];
 
 function FinancialOverview({ role, share, finance }: { role: AdminRole; share: number; finance: Finance }) {
   const isSuperAdmin = role === "super_admin";
