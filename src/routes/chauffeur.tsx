@@ -11,7 +11,7 @@ import {
   Navigation,
   Phone,
   RefreshCw,
-  Route,
+  Route as RouteIcon,
   ShieldCheck,
   Snowflake,
   Sparkles,
@@ -428,7 +428,7 @@ function OnboardPanel({ rides, anchor, seatsLeft, busy, onDropOff }: { rides: Ac
   return (
     <section className="glass-panel animate-journey-in overflow-hidden">
       <div className="border-b border-primary/30 bg-primary/10 px-5 py-4 text-xs font-bold uppercase text-primary">
-        <span className="flex items-center gap-2"><Route className="size-4" />Trajet verrouillé{anchor ? ` vers ${anchor.destination}` : ""}</span>
+        <span className="flex items-center gap-2"><RouteIcon className="size-4" />Trajet verrouillé{anchor ? ` vers ${anchor.destination}` : ""}</span>
       </div>
       <div className="space-y-4 p-5 sm:p-6">
         <p className="text-xs leading-5 text-muted-foreground">
