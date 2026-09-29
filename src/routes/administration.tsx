@@ -311,7 +311,7 @@ function AdministrationDashboard() {
         {isSuperAdmin ? (
           <>
             <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,.95fr)]">
-              <PartnerConfiguration
+              <PartnerConfiguration pin={associatePin} onPinChange={setAssociatePin}
                 draft={draft}
                 errors={errors}
                 partners={partners}
