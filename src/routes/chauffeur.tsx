@@ -140,6 +140,8 @@ function DriverWorkspace() {
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
+  const seenRideIds = useRef(new Set<string>());
+  const poolPrimed = useRef(false);
   const patchState = useCallback((update: Partial<PersistedDriverState>) => setState((current) => ({ ...current, ...update })), []);
 
   // Fiche chauffeur, abonnement du jour et course verrouillée côté serveur
@@ -173,7 +175,7 @@ function DriverWorkspace() {
     }
     const rows = data ?? [];
     const fresh = rows.some((row) => !seenRideIds.current.has(row.id));
-    if (fresh && seenRideIds.current.size + (poolPrimed.current ? 1 : 0) > 0 && poolPrimed.current) chimes.newRide();
+    if (fresh && poolPrimed.current) chimes.newRide();
     rows.forEach((row) => seenRideIds.current.add(row.id));
     poolPrimed.current = true;
     setOffers(rows.map((row) => ({ id: row.id, client: "", phone: "", distance: row.distance_km, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed })));
