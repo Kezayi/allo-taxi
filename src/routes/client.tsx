@@ -20,9 +20,9 @@ import {
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { z } from "zod";
 
-import driverPortrait from "@/assets/chauffeur-michel.jpg";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/client")({
@@ -55,7 +55,7 @@ type RideRequest = {
 
 const requestSchema = z.object({
   firstName: z.string().trim().min(2, "Saisissez au moins 2 caractères.").max(50, "Le prénom est trop long."),
-  phone: z.string().trim().regex(/^[0-9\s-]{7,14}$/, "Saisissez un numéro gabonais valide."),
+  phone: z.string().trim().refine((value) => /^[0-9]{8,9}$/.test(value.replace(/[\s-]/g, "")), "Saisissez un numéro gabonais valide (8 ou 9 chiffres)."),
   pickup: z.string().trim().min(3, "Précisez votre point de départ.").max(120, "L’adresse est trop longue."),
   destination: z.string().trim().min(3, "Précisez votre destination.").max(120, "L’adresse est trop longue."),
   comfort: z.enum(["standard", "climatise"]),
@@ -255,16 +255,18 @@ function ClientJourney() {
               errors={errors}
               identityOpen={identityOpen}
               suggestedPrice={suggestedPrice}
+              submitting={submitting}
+              submitError={submitError}
               onIdentityToggle={() => setIdentityOpen((value) => !value)}
               onUpdate={update}
               onSubmit={submitRequest}
             />
           )}
           {step === "waiting" && (
-            <WaitingScreen ride={ride} onCancel={cancelRequest} onSimulate={() => setStep("matched")} />
+            <WaitingScreen ride={ride} onCancel={cancelRequest} />
           )}
-          {step === "matched" && (
-            <MatchedScreen ride={ride} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} />
+          {step === "matched" && driver && (
+            <MatchedScreen ride={ride} driver={driver} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} onFinish={resetAll} />
           )}
         </div>
       </div>
