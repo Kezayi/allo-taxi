@@ -64,6 +64,13 @@
       "when": 1790712435240,
       "tag": "0008_shared_rides_same_direction",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790713817468,
+      "tag": "0009_shared_rides_toggle",
+      "breakpoints": true
     }
   ]
 }

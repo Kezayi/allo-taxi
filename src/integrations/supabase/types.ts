@@ -622,7 +622,9 @@ export type Database = {
         Args: { _active: boolean; _id: string }
         Returns: undefined
       }
+      set_shared_rides_enabled: { Args: { _on: boolean }; Returns: undefined }
       setting_num: { Args: { _default: number; _key: string }; Returns: number }
+      shared_rides_enabled: { Args: never; Returns: boolean }
       superadmin_exists: { Args: never; Returns: boolean }
       take_ride: {
         Args: { _ride_id: string }
