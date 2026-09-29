@@ -175,7 +175,7 @@ function DriverWorkspace() {
   // Pool localisé : rafraîchi toutes les 10 s quand le chauffeur est en ligne
   const refreshPool = useCallback(async () => {
     const position = await getPosition();
-    const { data, error } = await supabase.rpc("get_localized_pool_for_driver", { _lat: position?.lat ?? null as unknown as number, _lng: position?.lng ?? null as unknown as number });
+    const { data, error } = await supabase.rpc("get_localized_pool_for_driver", { _lat: position?.lat ?? null as unknown as number, _lng: position?.lng ?? null as unknown as number, _radius_km: null as unknown as number });
     if (error) {
       if (error.message.includes("Abonnement")) patchState({ accessActive: false, isOnline: false });
       return;
