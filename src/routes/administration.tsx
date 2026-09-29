@@ -315,32 +315,37 @@ function AdministrationDashboard() {
   );
 }
 
-function FinancialOverview({ role, share, availableShare, chartValues }: { role: AdminRole; share: number; availableShare: number; chartValues: number[] }) {
+function FinancialOverview({ role, share, finance }: { role: AdminRole; share: number; finance: Finance }) {
   const isSuperAdmin = role === "super_admin";
+  const values = finance.months.map((m) => m.value);
+  const last = values[5] ?? 0;
+  const previous = values[4] ?? 0;
+  const trend = previous > 0 ? `${last >= previous ? "+" : "−"} ${Math.abs(((last - previous) / previous) * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %` : "—";
   return (
     <section className="mt-7">
       <div className="grid gap-4 sm:grid-cols-3">
         {isSuperAdmin ? (
           <>
-            <MetricCard icon={<CircleDollarSign />} label="CA brut aujourd’hui" value={`${DAILY_REVENUE.toLocaleString("fr-FR")} FCFA`} detail="73 taxis actifs × 1 000 FCFA" featured />
-            <MetricCard icon={<CarFront />} label="Taxis actifs" value="73" detail="Accès journée validé" />
-            <MetricCard icon={<TrendingUp />} label="Évolution mensuelle" value="+ 7,7 %" detail="Par rapport au mois dernier" />
+            <MetricCard icon={<CircleDollarSign />} label="CA brut aujourd’hui" value={`${finance.todayRevenue.toLocaleString("fr-FR")} FCFA`} detail={`${finance.activeDrivers} taxis actifs × 1 000 FCFA`} featured />
+            <MetricCard icon={<CarFront />} label="Taxis actifs" value={String(finance.activeDrivers)} detail="Accès journée validé" />
+            <MetricCard icon={<TrendingUp />} label="Évolution mensuelle" value={trend} detail="Mois en cours vs mois dernier" />
           </>
         ) : (
           <div className="sm:col-span-3 rounded-md border border-primary/40 bg-primary p-6 text-primary-foreground shadow-gold sm:p-8">
             <div className="flex items-center gap-2 text-xs font-black uppercase"><Sparkles className="size-4" />{roleLabels[role]}</div>
-            <p className="mt-6 text-sm opacity-75">Votre part disponible aujourd’hui</p>
-            <p className="mt-2 text-4xl font-black tabular-nums sm:text-5xl">{availableShare.toLocaleString("fr-FR")} <span className="text-lg">FCFA</span></p>
+            <p className="mt-6 text-sm opacity-75">Votre part disponible ({share} % définis) aujourd’hui</p>
+            <p className="mt-2 text-4xl font-black tabular-nums sm:text-5xl">{finance.myTodayShare.toLocaleString("fr-FR")} <span className="text-lg">FCFA</span></p>
             <p className="mt-4 text-xs font-semibold">Part contractuelle active : {share} %</p>
           </div>
         )}
       </div>
-      <RevenueChart values={chartValues} role={role} />
+      <RevenueChart months={finance.months} role={role} />
     </section>
   );
 }
 
-function RevenueChart({ values, role }: { values: number[]; role: AdminRole }) {
+function RevenueChart({ months, role }: { months: Finance["months"]; role: AdminRole }) {
+  const values = months.map((m) => m.value);
   const max = Math.max(...values, 1);
   const total = values.reduce((sum, value) => sum + value, 0);
   return (
@@ -350,13 +355,13 @@ function RevenueChart({ values, role }: { values: number[]; role: AdminRole }) {
         <div className="text-right"><p className="text-[10px] uppercase text-muted-foreground">Cumul affiché</p><p className="mt-1 text-lg font-bold text-primary">{total.toLocaleString("fr-FR")} FCFA</p></div>
       </div>
       <div className="mt-7 grid h-56 grid-cols-6 items-end gap-2 sm:gap-4" aria-label="Graphique des gains des six derniers mois">
-        {values.map((value, index) => (
-          <div key={months[index]} className="flex h-full min-w-0 flex-col justify-end gap-2 text-center">
-            <span className="text-[9px] font-semibold text-muted-foreground">{compactMoney(value)}</span>
+        {months.map((month) => (
+          <div key={month.label} className="flex h-full min-w-0 flex-col justify-end gap-2 text-center">
+            <span className="text-[9px] font-semibold text-muted-foreground">{compactMoney(month.value)}</span>
             <div className="group relative mx-auto flex h-40 w-full max-w-14 items-end overflow-hidden rounded-sm bg-secondary">
-              <div className="w-full rounded-sm bg-primary transition-[height] duration-1000 ease-out group-hover:bg-live" style={{ height: `${Math.max(8, (value / max) * 100)}%` }} />
+              <div className="w-full rounded-sm bg-primary transition-[height] duration-1000 ease-out group-hover:bg-live" style={{ height: `${Math.max(4, (month.value / max) * 100)}%` }} />
             </div>
-            <span className="text-[10px] text-muted-foreground">{months[index]}</span>
+            <span className="text-[10px] capitalize text-muted-foreground">{month.label}</span>
           </div>
         ))}
       </div>
