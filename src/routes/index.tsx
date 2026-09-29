@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, CarFront, Check, Eye, EyeOff, LockKeyhole, ShieldCheck, UserRound } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -176,6 +176,6 @@ function Stat({ value, label }: { value: number; label: string }) {
   );
 }
 
-function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: React.ReactNode }) {
+function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {
   return <div><label htmlFor={htmlFor} className="mb-2 block text-xs font-medium text-foreground">{label}</label>{children}</div>;
 }
