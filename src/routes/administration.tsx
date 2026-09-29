@@ -622,3 +622,20 @@ function compactMoney(value: number) {
   if (value >= 1000) return `${Math.round(value / 1000)} k`;
   return value.toLocaleString("fr-FR");
 }
+
+function formatPhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length !== 12 || !digits.startsWith("241")) return phone;
+  return `+241 ${digits.slice(3, 6)} ${digits.slice(6, 8)} ${digits.slice(8, 10)} ${digits.slice(10, 12)}`;
+}
+
+function maskPhone(phone: string) {
+  const formatted = formatPhone(phone);
+  const parts = formatted.split(" ");
+  if (parts.length !== 5) return phone.replace(/\d(?=\d{4})/g, "*");
+  return `${parts[0]} ${parts[1]} ${parts[2]} ** **`;
+}
+
+function csvCell(value: string) {
+  return `"${value.replaceAll('"', '""')}"`;
+}
