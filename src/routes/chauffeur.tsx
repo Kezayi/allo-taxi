@@ -180,6 +180,19 @@ function DriverWorkspace() {
     return () => window.clearInterval(interval);
   }, [isApproved, networkOnline, refreshPool, state.accessActive, state.isOnline, state.lockedRide]);
 
+  // Position partagée toutes les 20 s pendant une course : alimente le temps d'arrivée affiché au client
+  const lockedId = state.lockedRide?.id;
+  useEffect(() => {
+    if (!lockedId || !networkOnline) return;
+    const send = async () => {
+      const position = await getPosition();
+      if (position) await supabase.rpc("update_driver_position", { _lat: position.lat, _lng: position.lng });
+    };
+    void send();
+    const interval = window.setInterval(() => void send(), 20_000);
+    return () => window.clearInterval(interval);
+  }, [lockedId, networkOnline]);
+
   async function updateAvailability(update: Partial<Pick<PersistedDriverState, "isOnline" | "airConditioning">>) {
     const next = { isOnline: update.isOnline ?? state.isOnline, airConditioning: update.airConditioning ?? state.airConditioning };
     patchState(next);
