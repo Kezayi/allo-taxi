@@ -11,6 +11,6 @@
 
 - Keep Client, Chauffeur, and Administration as distinct top-level routes so each product space remains isolated and independently extensible.
 - Store account profiles separately from role assignments; this prevents profile edits from becoming privilege escalation paths.
-- Keep the express ride journey client-local until a later real-time dispatch milestone; this preserves the requested simulation boundary without fake persistence.
-- Persist the simulated driver workspace in localStorage so activation, availability, vehicle comfort, and locked-course state survive temporary network loss and reloads.
-- Keep the administration role selector and partner finance configuration as an explicitly local simulation; production authorization must continue to rely on server-validated user_roles.
+- Express rides are inserted anonymously into rides (insert-only RLS) and clients follow them via the PII-free ride_public_status table over Realtime; phones never become anon-readable.
+- Driver actions (activation, pool, take, close) go through SECURITY DEFINER RPCs that check has_role + approved driver; localStorage only caches UI state for offline resilience.
+- Administration derives its view from server-validated user_roles; finances come from financial_dashboard_split/financial_today_split and the audit from export_full_ride_logs (ride_logs is immutable by trigger).
