@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { phoneSchema, pinSchema, signInWithPhonePin, signUpWithPhonePin } from "@/lib/phone-auth";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -46,8 +47,24 @@ function AnimatedNumber({ value }: { value: number }) {
   return <span>{display}</span>;
 }
 
+function useLiveActivity() {
+  const [activity, setActivity] = useState({ active_passengers: 0, drivers_online: 0, matches_today: 0 });
+  useEffect(() => {
+    let alive = true;
+    const load = () => supabase.rpc("get_public_activity").then(({ data }) => {
+      const row = Array.isArray(data) ? data[0] : null;
+      if (alive && row) setActivity({ active_passengers: Number(row.active_passengers), drivers_online: Number(row.drivers_online), matches_today: Number(row.matches_today) });
+    });
+    void load();
+    const t = window.setInterval(load, 30000);
+    return () => { alive = false; window.clearInterval(t); };
+  }, []);
+  return activity;
+}
+
 function Index() {
   const navigate = useNavigate();
+  const activity = useLiveActivity();
   const [space, setSpace] = useState<Space>("client");
   const [showPin, setShowPin] = useState(false);
 
@@ -119,9 +136,9 @@ function Index() {
               Activité en direct
             </div>
             <div className="grid grid-cols-3 divide-x divide-border">
-              <Stat value={200} label="Passagers actifs" />
-              <Stat value={73} label="Taxis en ligne" />
-              <Stat value={187} label="Mises en relation réussies aujourd’hui" />
+              <Stat value={activity.active_passengers} label="Passagers en attente ou en course" />
+              <Stat value={activity.drivers_online} label="Taxis en ligne" />
+              <Stat value={activity.matches_today} label="Mises en relation aujourd’hui" />
             </div>
           </section>
         </section>
