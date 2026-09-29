@@ -594,15 +594,6 @@ function Field({ label, error, children }: { label: string; error: string | unde
   return <label className="block"><span className="mb-2 block text-xs font-medium">{label}</span>{children}{error && <span className="mt-1.5 block text-xs text-destructive" role="alert">{error}</span>}</label>;
 }
 function SharedRideOption({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  const [enabled, setEnabled] = useState(false);
-  useEffect(() => {
-    void supabase.rpc("shared_rides_enabled").then(({ data }) => {
-      setEnabled(Boolean(data));
-      if (!data && checked) onChange(false);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  if (!enabled) return null;
   return (
     <label className="glass-panel flex cursor-pointer items-start gap-3 p-5">
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1 size-5 shrink-0 accent-[var(--color-primary)]" />

@@ -264,12 +264,12 @@ function SharedRidesToggle({ onNotice }: { onNotice: Notice }) {
     const { error } = await supabase.rpc("set_shared_rides_enabled", { _on: next });
     if (error) return onNotice("Changement impossible.");
     setOn(next);
-    onNotice(next ? "Taxi partagé activé." : "Taxi partagé désactivé.");
+    onNotice(next ? "Verrouillage du trajet activé." : "Verrouillage du trajet désactivé.");
   }
   return (
-    <Panel icon={<Users className="size-4 text-primary" />} title="Taxi partagé (option)" subtitle="Permet aux clients d’accepter d’autres passagers allant dans la même direction (3 places, prix inchangé)."
+    <Panel icon={<Users className="size-4 text-primary" />} title="Verrouillage du trajet (taxi partagé)" subtitle="Activé : le trajet du premier client verrouille le chauffeur — il ne peut prendre que des passagers ayant accepté le partage et allant dans la même direction (3 places, prix inchangé). Désactivé : le chauffeur reste libre de prendre toute course, même avec un passager à bord."
       action={on === null ? <Loader2 className="size-4 animate-spin" /> : <Chip tone={on ? "live" : "muted"}>{on ? "Activé" : "Désactivé"}</Chip>}>
-      <Button onClick={() => void toggle()} disabled={on === null} variant={on ? "outline" : "default"} className="h-11 font-bold"><Power />{on ? "Désactiver le taxi partagé" : "Activer le taxi partagé"}</Button>
+      <Button onClick={() => void toggle()} disabled={on === null} variant={on ? "outline" : "default"} className="h-11 font-bold"><Power />{on ? "Désactiver le verrouillage du trajet" : "Activer le verrouillage du trajet"}</Button>
     </Panel>
   );
 }
