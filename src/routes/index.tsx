@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { phoneSchema, pinSchema, signInWithPhonePin } from "@/lib/phone-auth";
+import { phoneSchema, pinSchema, signInWithPhonePin, signUpWithPhonePin } from "@/lib/phone-auth";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
