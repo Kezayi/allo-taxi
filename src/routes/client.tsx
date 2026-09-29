@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { chimes } from "@/lib/chime";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
@@ -135,13 +136,20 @@ function ClientJourney() {
   const listening = step === "waiting" || step === "matched";
   useEffect(() => {
     if (!activeId || !listening) return;
+    let lastStatus: string | null = null;
     const apply = (row: { status: string; chauffeur_first_name: string | null; vehicle_model: string | null; vehicle_plate: string | null; chauffeur_phone: string | null; eta_minutes?: number | null; driver_distance_km?: number | null } | null) => {
       if (!row) return;
+      const changed = lastStatus !== null && lastStatus !== row.status;
+      const first = lastStatus === null;
+      lastStatus = row.status;
       if (row.status === "negotiating" && row.chauffeur_first_name) {
+        if (changed || (first && step === "waiting")) chimes.accepted();
         const driver = { firstName: row.chauffeur_first_name, vehicle: row.vehicle_model ?? "", plate: row.vehicle_plate ?? "", phone: row.chauffeur_phone ?? "" };
         setActive((current) => current ? { ...current, driver } : current);
         setEta(row.eta_minutes != null ? { minutes: row.eta_minutes, km: row.driver_distance_km ?? null } : null);
         setStep("matched");
+      } else if (row.status === "completed") {
+        if (changed) chimes.finished();
       } else if (row.status === "canceled") {
         resetAll();
         setSubmitError("Votre demande a expiré. Vous pouvez la republier.");
