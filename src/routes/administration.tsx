@@ -192,6 +192,9 @@ function AdministrationDashboard() {
 
   const currentShare = role && role !== "super_admin" && partners[role].active ? partners[role].share : 0;
 
+  const [associatePin, setAssociatePin] = useState("");
+  const provisionAssociate = useServerFn(provisionAssociateAccount);
+
   function updateDraft<K extends keyof Partner>(key: K, value: Partner[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
     setErrors((current) => ({ ...current, [key]: "" }));
@@ -211,12 +214,21 @@ function AdministrationDashboard() {
       setErrors(nextErrors);
       return;
     }
+    if (associatePin && !/^\d{4}$|^\d{6}$/.test(associatePin)) return setErrors({ pin: "4 ou 6 chiffres." });
     const { error } = await supabase.from("associates_settings").upsert(
       { partner_key: partnerKeys[parsed.data.type], display_name: parsed.data.name, phone: parsed.data.phone, share_percent: parsed.data.share, is_active: draft.active, updated_at: new Date().toISOString() },
       { onConflict: "partner_key" },
     );
     if (error) return setNotice("Enregistrement impossible. Réessayez.");
-    setNotice("Configuration enregistrée. Les calculs ont été actualisés.");
+    if (associatePin) {
+      try {
+        await provisionAssociate({ data: { partnerKey: partnerKeys[parsed.data.type], phone: parsed.data.phone, pin: associatePin, name: parsed.data.name } });
+        setAssociatePin("");
+        setNotice("Configuration enregistrée. Le compte de l’associé est prêt : il se connecte avec son numéro et ce code PIN.");
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : "Création du compte associé impossible.");
+      }
+    } else setNotice("Configuration enregistrée. Les calculs ont été actualisés.");
     void loadData();
   }
 
@@ -372,7 +384,7 @@ function RevenueChart({ months, role }: { months: Finance["months"]; role: Admin
   );
 }
 
-function PartnerConfiguration({ draft, errors, partners, onTypeChange, onUpdate, onSave, onToggle }: {
+function PartnerConfiguration({ draft, errors, partners, onTypeChange, onUpdate, onSave, onToggle, pin, onPinChange }: {
   draft: Partner;
   errors: Record<string, string>;
   partners: Record<PartnerType, Partner>;
@@ -380,6 +392,8 @@ function PartnerConfiguration({ draft, errors, partners, onTypeChange, onUpdate,
   onUpdate: <K extends keyof Partner>(key: K, value: Partner[K]) => void;
   onSave: (event: FormEvent<HTMLFormElement>) => void;
   onToggle: (type: PartnerType) => void;
+  pin: string;
+  onPinChange: (value: string) => void;
 }) {
   return (
     <section className="glass-panel p-5 sm:p-7">
@@ -392,9 +406,14 @@ function PartnerConfiguration({ draft, errors, partners, onTypeChange, onUpdate,
           <Field label="Nom / Raison Sociale" error={errors["name"]}><Input value={draft.name} onChange={(event) => onUpdate("name", event.target.value)} maxLength={100} className="h-12" /></Field>
           <Field label="N° Téléphone du compte lié" error={errors["phone"]}><Input value={draft.phone} onChange={(event) => onUpdate("phone", event.target.value)} type="tel" inputMode="tel" maxLength={18} className="h-12" /></Field>
         </div>
-        <Field label="Part des revenus (%)" error={errors["share"]}>
-          <div className="relative"><Input value={draft.share} onChange={(event) => onUpdate("share", Number(event.target.value))} type="number" min={0} max={100} step={0.5} className="h-12 pr-10 text-lg font-bold tabular-nums" /><Percent className="pointer-events-none absolute right-3 top-3.5 size-4 text-primary" /></div>
-        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Part des revenus (%)" error={errors["share"]}>
+            <div className="relative"><Input value={draft.share} onChange={(event) => onUpdate("share", Number(event.target.value))} type="number" min={0} max={100} step={0.5} className="h-12 pr-10 text-lg font-bold tabular-nums" /><Percent className="pointer-events-none absolute right-3 top-3.5 size-4 text-primary" /></div>
+          </Field>
+          <Field label="Code PIN de connexion (création / réinitialisation)" error={errors["pin"]}>
+            <Input value={pin} onChange={(event) => onPinChange(event.target.value.replace(/\D/g, ""))} type="password" inputMode="numeric" maxLength={6} placeholder="Laisser vide pour ne pas changer" autoComplete="new-password" className="h-12 tracking-[0.3em]" />
+          </Field>
+        </div>
         <Button type="submit" className="h-12 w-full font-bold shadow-gold"><Save />Enregistrer la configuration</Button>
       </form>
       <div className="mt-6 grid gap-3 border-t border-border pt-5 sm:grid-cols-2">
