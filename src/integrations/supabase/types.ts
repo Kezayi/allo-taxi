@@ -501,6 +501,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      set_driver_availability: {
+        Args: { _has_ac: boolean; _online: boolean }
+        Returns: undefined
+      }
       take_ride: {
         Args: { _ride_id: string }
         Returns: {

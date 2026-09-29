@@ -15,6 +15,13 @@
       "when": 1790698389931,
       "tag": "0001_allo_taxi_core_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790698428763,
+      "tag": "0002_driver_availability_rpc",
+      "breakpoints": true
     }
   ]
 }
