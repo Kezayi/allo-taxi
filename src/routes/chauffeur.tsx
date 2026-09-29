@@ -373,7 +373,7 @@ function ActivationDashboard({ state, onPatch }: { state: PersistedDriverState; 
   );
 }
 
-function RidePool({ offers, airConditioning, onTake }: { offers: RideOffer[]; airConditioning: boolean; onTake: (id: string) => void }) {
+function RidePool({ offers, airConditioning, busy, onTake }: { offers: RideOffer[]; airConditioning: boolean; busy: boolean; onTake: (id: string) => void }) {
   return (
     <section className="animate-journey-in">
       <div className="mb-4 flex items-end justify-between gap-4">
@@ -381,18 +381,23 @@ function RidePool({ offers, airConditioning, onTake }: { offers: RideOffer[]; ai
         <span className="shrink-0 rounded-md border border-border bg-secondary px-3 py-1.5 text-[10px] text-muted-foreground">{offers.length} disponibles</span>
       </div>
       {!airConditioning && <p className="mb-4 flex items-center gap-2 text-xs text-muted-foreground"><Wind className="size-4 text-primary" />Les demandes exigeant la climatisation sont masquées.</p>}
+      {offers.length === 0 && <p className="glass-panel p-6 text-center text-sm text-muted-foreground">Aucune demande dans un rayon de 5 km. Actualisation automatique toutes les 10 secondes.</p>}
       <div className="space-y-4">
-        {offers.map((ride) => <RideCard key={ride.id} ride={ride} onTake={() => onTake(ride.id)} />)}
+        {offers.map((ride) => <RideCard key={ride.id} ride={ride} busy={busy} onTake={() => onTake(ride.id)} />)}
       </div>
     </section>
   );
 }
 
-function RideCard({ ride, onTake }: { ride: RideOffer; onTake: () => void }) {
+function distanceLabel(distance: number | null) {
+  return distance === null ? "Position non partagée" : `À ${distance.toFixed(1)} km de vous`;
+}
+
+function RideCard({ ride, busy, onTake }: { ride: RideOffer; busy: boolean; onTake: () => void }) {
   return (
     <article className="glass-panel p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-semibold text-primary"><MapPin className="size-3.5" />À {ride.distance.toFixed(1)} km de vous</span>
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-semibold text-primary"><MapPin className="size-3.5" />{distanceLabel(ride.distance)}</span>
         <div className="text-right"><p className="text-[10px] uppercase text-muted-foreground">Prix proposé</p><p className="mt-1 text-2xl font-black text-primary">{ride.price.toLocaleString("fr-FR")} <span className="text-sm">FCFA</span></p></div>
       </div>
       <RouteDetails ride={ride} />
@@ -401,13 +406,13 @@ function RideCard({ ride, onTake }: { ride: RideOffer; onTake: () => void }) {
           <RequirementBadge icon={<Banknote />} label={ride.payment} />
           <RequirementBadge icon={ride.airConditioning ? <Snowflake /> : <Wind />} label={ride.airConditioning ? "Climatisation exigée" : "Standard"} highlight={ride.airConditioning} />
         </div>
-        <Button type="button" onClick={onTake} className="h-11 w-full px-7 font-bold shadow-gold sm:w-auto">Prendre <Navigation /></Button>
+        <Button type="button" disabled={busy} onClick={onTake} className="h-11 w-full px-7 font-bold shadow-gold sm:w-auto">Prendre <Navigation /></Button>
       </div>
     </article>
   );
 }
 
-function NegotiationScreen({ ride, onFinish }: { ride: RideOffer; onFinish: (success: boolean) => void }) {
+function NegotiationScreen({ ride, busy, onFinish }: { ride: RideOffer; busy: boolean; onFinish: (success: boolean) => void }) {
   const message = encodeURIComponent(`Bonjour ${ride.client}, je suis votre chauffeur Allo Taxi..? Je souhaite confirmer votre trajet de ${ride.pickup} vers ${ride.destination}, au tarif proposé de ${ride.price.toLocaleString("fr-FR")} FCFA, règlement ${ride.payment}${ride.airConditioning ? ", avec climatisation" : ""}. Où puis-je vous retrouver précisément ?`);
   return (
     <section className="glass-panel animate-journey-in overflow-hidden">
@@ -417,7 +422,7 @@ function NegotiationScreen({ ride, onFinish }: { ride: RideOffer; onFinish: (suc
           <div className="mx-auto grid size-14 place-items-center rounded-md bg-primary/10 text-primary"><UserRound className="size-7" /></div>
           <p className="mt-4 text-xs font-semibold uppercase text-primary">Client à contacter</p>
           <h1 className="mt-2 text-3xl font-semibold">{ride.client}</h1>
-          <p className="mt-2 text-sm text-muted-foreground">À {ride.distance.toFixed(1)} km · Offre à {ride.price.toLocaleString("fr-FR")} FCFA</p>
+          <p className="mt-2 text-sm text-muted-foreground">{distanceLabel(ride.distance)} · Offre à {ride.price.toLocaleString("fr-FR")} FCFA</p>
         </div>
 
         <RouteDetails ride={ride} prominent />
@@ -428,14 +433,14 @@ function NegotiationScreen({ ride, onFinish }: { ride: RideOffer; onFinish: (suc
         </div>
 
         <Button asChild className="mt-6 h-14 w-full bg-live text-sm font-bold text-foreground shadow-live hover:bg-live/90">
-          <a href={`https://wa.me/${ride.phone}?text=${message}`} target="_blank" rel="noreferrer"><Phone />Ouvrir WhatsApp pour négocier</a>
+          <a href={`https://wa.me/${ride.phone.replace(/\D/g, "")}?text=${message}`} target="_blank" rel="noreferrer"><Phone />Ouvrir WhatsApp pour négocier</a>
         </Button>
 
         <div className="mt-7 border-t border-border pt-5">
-          <p className="mb-4 text-center text-xs leading-5 text-muted-foreground">Clôturez obligatoirement la discussion pour recevoir une nouvelle course.</p>
+          <p className="mb-4 text-center text-xs leading-5 text-muted-foreground">Clôturez obligatoirement la discussion pour recevoir une nouvelle course. Sans clôture sous 15 minutes, la course est libérée et une pénalité est enregistrée.</p>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Button type="button" variant="outline" onClick={() => onFinish(false)} className="min-h-12 whitespace-normal border-destructive/40 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"><XCircle />Annuler — Échec de la discussion</Button>
-            <Button type="button" onClick={() => onFinish(true)} className="min-h-12 whitespace-normal bg-live text-xs font-bold text-foreground hover:bg-live/90"><CheckCircle2 />Embarqué — Course validée</Button>
+            <Button type="button" disabled={busy} variant="outline" onClick={() => onFinish(false)} className="min-h-12 whitespace-normal border-destructive/40 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"><XCircle />Annuler — Échec de la discussion</Button>
+            <Button type="button" disabled={busy} onClick={() => onFinish(true)} className="min-h-12 whitespace-normal bg-live text-xs font-bold text-foreground hover:bg-live/90"><CheckCircle2 />Embarqué — Course validée</Button>
           </div>
         </div>
       </div>
