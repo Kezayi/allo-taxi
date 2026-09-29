@@ -385,7 +385,7 @@ const adminTabs = [
 ] as const;
 type AdminTab = (typeof adminTabs)[number]["id"];
 
-function FinancialOverview({ role, share, finance }: { role: AdminRole; share: number; finance: Finance }) {
+function FinancialOverview({ role, share, finance, dailyPrice }: { role: AdminRole; share: number; finance: Finance; dailyPrice: number }) {
   const isSuperAdmin = role === "super_admin";
   const values = finance.months.map((m) => m.value);
   const last = values[5] ?? 0;
@@ -396,7 +396,7 @@ function FinancialOverview({ role, share, finance }: { role: AdminRole; share: n
       <div className="grid gap-4 sm:grid-cols-3">
         {isSuperAdmin ? (
           <>
-            <MetricCard icon={<CircleDollarSign />} label="CA brut aujourd’hui" value={`${finance.todayRevenue.toLocaleString("fr-FR")} FCFA`} detail={`${finance.activeDrivers} taxis actifs × 1 000 FCFA`} featured />
+            <MetricCard icon={<CircleDollarSign />} label="CA brut aujourd’hui" value={`${finance.todayRevenue.toLocaleString("fr-FR")} FCFA`} detail={`${finance.activeDrivers} taxis actifs × ${dailyPrice.toLocaleString("fr-FR")} FCFA`} featured />
             <MetricCard icon={<CarFront />} label="Taxis actifs" value={String(finance.activeDrivers)} detail="Accès journée validé" />
             <MetricCard icon={<TrendingUp />} label="Évolution mensuelle" value={trend} detail="Mois en cours vs mois dernier" />
           </>
