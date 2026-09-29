@@ -71,6 +71,13 @@
       "when": 1790713817468,
       "tag": "0009_shared_rides_toggle",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790714290049,
+      "tag": "0010_optional_route_lock",
+      "breakpoints": true
     }
   ]
 }

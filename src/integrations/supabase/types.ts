@@ -562,7 +562,7 @@ export type Database = {
         }[]
       }
       get_localized_pool_for_driver: {
-        Args: { _lat: number; _lng: number; _radius_km?: number }
+        Args: { _lat: number; _lng: number; _radius_km: number }
         Returns: {
           created_at: string
           distance_km: number
