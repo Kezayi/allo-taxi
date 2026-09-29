@@ -5,15 +5,18 @@ import {
   Banknote,
   CarFront,
   CheckCircle2,
+  Flag,
   Clock3,
   MapPin,
   Navigation,
   Phone,
   RefreshCw,
+  Route,
   ShieldCheck,
   Snowflake,
   Sparkles,
   UserRound,
+  Users,
   Wifi,
   WifiOff,
   Wind,
@@ -58,19 +61,22 @@ type RideOffer = {
   price: number;
 };
 
+type ActiveRide = RideOffer & { status: "negotiating" | "onboard"; sharing: boolean; anchor: boolean };
+
 type PersistedDriverState = {
   accessActive: boolean;
   isOnline: boolean;
   airConditioning: boolean;
-  lockedRide: RideOffer | null;
+  activeRides: ActiveRide[];
 };
 
 type DriverRow = { status: string; first_name: string; has_ac: boolean };
 
-const STORAGE_KEY = "allo-taxi-driver-workspace-v2";
+const STORAGE_KEY = "allo-taxi-driver-workspace-v3";
+const MAX_SEATS = 3;
 const POOL_REFRESH_MS = 10000;
 
-const defaultState: PersistedDriverState = { accessActive: false, isOnline: false, airConditioning: true, lockedRide: null };
+const defaultState: PersistedDriverState = { accessActive: false, isOnline: false, airConditioning: true, activeRides: [] };
 
 const registrationSchema = z.object({
   first_name: z.string().trim().min(2, "Prénom trop court.").max(40),
@@ -94,6 +100,7 @@ function friendlyError(message: string | undefined) {
   if (!message) return "Action impossible pour le moment.";
   if (message.includes("déjà prise")) return "Cette course vient d’être prise par un autre chauffeur.";
   if (message.includes("Abonnement")) return "Activez votre journée pour recevoir des courses.";
+  if (message.includes("TRAJET_VERROUILLE")) return message.split("TRAJET_VERROUILLE: ")[1] ? `Trajet verrouillé : ${message.split("TRAJET_VERROUILLE: ")[1]}.` : "Trajet verrouillé.";
   if (message.includes("Clôturez")) return "Clôturez d’abord votre course en cours.";
   return navigator.onLine ? "Action impossible pour le moment." : "Pas de réseau. Réessayez dès le retour de la connexion.";
 }
@@ -153,13 +160,13 @@ function DriverWorkspace() {
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Libreville" }).format(new Date());
     const [{ data: sub }, { data: current }] = await Promise.all([
       supabase.from("subscriptions").select("id").eq("driver_id", user.id).eq("day", today).eq("status", "active").maybeSingle(),
-      supabase.from("rides").select("*").eq("chauffeur_id", user.id).eq("status", "negotiating").maybeSingle(),
+      supabase.from("rides").select("*").eq("chauffeur_id", user.id).in("status", ["negotiating", "onboard"]).order("started_negotiation_at"),
     ]);
     patchState({
       accessActive: Boolean(sub),
       airConditioning: data.has_ac,
       ...(sub ? {} : { isOnline: false }),
-      lockedRide: current ? { id: current.id, client: current.client_name, phone: current.client_phone, distance: null, pickup: current.pickup_location, destination: current.dropoff_location, payment: current.payment_method, airConditioning: current.wants_ac, price: current.price_proposed } : null,
+      activeRides: (current ?? []).map((row) => ({ id: row.id, client: row.client_name, phone: row.client_phone, distance: null, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed, status: row.status === "onboard" ? "onboard" as const : "negotiating" as const, sharing: row.allow_sharing, anchor: row.anchor_ride_id === null })),
     });
   }, [patchState, user]);
 
@@ -181,15 +188,20 @@ function DriverWorkspace() {
     setOffers(rows.map((row) => ({ id: row.id, client: "", phone: "", distance: row.distance_km, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed })));
   }, [patchState]);
 
+  const negotiating = state.activeRides.find((ride) => ride.status === "negotiating") ?? null;
+  const onboard = state.activeRides.filter((ride) => ride.status === "onboard");
+  const anchorRide = state.activeRides.find((ride) => ride.anchor) ?? null;
+  const canShare = state.activeRides.length === 0 || (!negotiating && Boolean(anchorRide?.sharing) && anchorRide?.status === "onboard" && state.activeRides.length < MAX_SEATS);
+
   useEffect(() => {
-    if (!isApproved || !state.accessActive || !state.isOnline || state.lockedRide || !networkOnline) return;
+    if (!isApproved || !state.accessActive || !state.isOnline || negotiating || !canShare || !networkOnline) return;
     void refreshPool();
     const interval = window.setInterval(() => void refreshPool(), POOL_REFRESH_MS);
     return () => window.clearInterval(interval);
-  }, [isApproved, networkOnline, refreshPool, state.accessActive, state.isOnline, state.lockedRide]);
+  }, [isApproved, networkOnline, refreshPool, state.accessActive, state.isOnline, negotiating, canShare]);
 
   // Position partagée toutes les 20 s pendant une course : alimente le temps d'arrivée affiché au client
-  const lockedId = state.lockedRide?.id;
+  const lockedId = negotiating?.id;
   useEffect(() => {
     if (!lockedId || !networkOnline) return;
     let arrived = false;
@@ -235,18 +247,27 @@ function DriverWorkspace() {
       void refreshPool();
       return;
     }
-    const offer = offers.find((item) => item.id === id);
-    patchState({ lockedRide: { id: row.id, client: row.client_name, phone: row.client_phone, distance: offer?.distance ?? null, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed } });
+    setOffers([]);
+    await loadDriver();
   }
 
   async function finishRide(success: boolean) {
-    if (!state.lockedRide) return;
+    if (!negotiating) return;
     setBusy(true);
-    const { error } = await supabase.rpc("close_ride", { _ride_id: state.lockedRide.id, _success: success });
+    const { error } = await supabase.rpc("close_ride", { _ride_id: negotiating.id, _success: success });
     setBusy(false);
     if (error) return setNotice(friendlyError(error.message));
-    patchState({ lockedRide: null });
-    setNotice(success ? "Course validée. Mise en relation enregistrée au registre." : "Discussion annulée. La demande retourne dans le pool.");
+    await loadDriver();
+    setNotice(success ? "Client à bord. Déposez-le à destination pour clôturer la course." : "Discussion annulée. La demande retourne dans le pool.");
+  }
+
+  async function dropOff(id: string) {
+    setBusy(true);
+    const { error } = await supabase.rpc("drop_off_ride", { _ride_id: id });
+    setBusy(false);
+    if (error) return setNotice(friendlyError(error.message));
+    await loadDriver();
+    setNotice("Passager déposé. Course enregistrée au registre.");
   }
 
   const header = (
@@ -285,13 +306,14 @@ function DriverWorkspace() {
 
         <div className={cn("mt-5 space-y-5 transition duration-700", !state.accessActive && "pointer-events-none select-none blur-md")} aria-hidden={!state.accessActive}>
           <ActivationDashboard state={state} onPatch={(update) => void updateAvailability(update)} />
-          {state.lockedRide ? (
-            <NegotiationScreen ride={state.lockedRide} busy={busy} onFinish={(success) => void finishRide(success)} />
-          ) : state.isOnline ? (
-            <RidePool offers={offers} airConditioning={state.airConditioning} busy={busy} onTake={(id) => void takeRide(id)} />
-          ) : (
+          {onboard.length > 0 && <OnboardPanel rides={onboard} anchor={anchorRide} seatsLeft={MAX_SEATS - state.activeRides.length} busy={busy} onDropOff={(id) => void dropOff(id)} />}
+          {negotiating ? (
+            <NegotiationScreen ride={negotiating} busy={busy} onFinish={(success) => void finishRide(success)} />
+          ) : !state.isOnline ? (
             <OfflinePanel />
-          )}
+          ) : canShare ? (
+            <RidePool offers={offers} airConditioning={state.airConditioning} busy={busy} shared={state.activeRides.length > 0} onTake={(id) => void takeRide(id)} />
+          ) : null}
         </div>
 
         {!state.accessActive && (
@@ -401,15 +423,44 @@ function ActivationDashboard({ state, onPatch }: { state: PersistedDriverState; 
   );
 }
 
-function RidePool({ offers, airConditioning, busy, onTake }: { offers: RideOffer[]; airConditioning: boolean; busy: boolean; onTake: (id: string) => void }) {
+function OnboardPanel({ rides, anchor, seatsLeft, busy, onDropOff }: { rides: ActiveRide[]; anchor: ActiveRide | null; seatsLeft: number; busy: boolean; onDropOff: (id: string) => void }) {
+  const locked = !anchor?.sharing;
+  return (
+    <section className="glass-panel animate-journey-in overflow-hidden">
+      <div className="border-b border-primary/30 bg-primary/10 px-5 py-4 text-xs font-bold uppercase text-primary">
+        <span className="flex items-center gap-2"><Route className="size-4" />Trajet verrouillé{anchor ? ` vers ${anchor.destination}` : ""}</span>
+      </div>
+      <div className="space-y-4 p-5 sm:p-6">
+        <p className="text-xs leading-5 text-muted-foreground">
+          {locked
+            ? "Le client principal n’a pas accepté le partage : aucune autre course ne vous sera proposée avant sa dépose."
+            : seatsLeft > 0
+              ? `Partage accepté par le client principal. Seules les courses dans la même direction vous sont proposées (${seatsLeft} place${seatsLeft > 1 ? "s" : ""} restante${seatsLeft > 1 ? "s" : ""}).`
+              : "Véhicule complet : 3 passagers à bord."}
+        </p>
+        {rides.map((ride) => (
+          <div key={ride.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-background/35 p-4">
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 text-sm font-semibold"><Users className="size-4 text-primary" />{ride.client}{ride.anchor && <span className="rounded border border-primary/30 px-1.5 text-[10px] text-primary">Principal</span>}</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">{ride.pickup} → {ride.destination} · {ride.price.toLocaleString("fr-FR")} FCFA</p>
+            </div>
+            <Button type="button" disabled={busy} onClick={() => onDropOff(ride.id)} className="h-10 bg-live text-xs font-bold text-foreground hover:bg-live/90"><Flag />Déposé à destination</Button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RidePool({ offers, airConditioning, busy, shared = false, onTake }: { offers: RideOffer[]; airConditioning: boolean; busy: boolean; shared?: boolean; onTake: (id: string) => void }) {
   return (
     <section className="animate-journey-in">
       <div className="mb-4 flex items-end justify-between gap-4">
-        <div><p className="text-xs font-semibold uppercase text-live">Flux en direct</p><h1 className="mt-1 text-2xl font-semibold">Courses à proximité</h1></div>
+        <div><p className="text-xs font-semibold uppercase text-live">Flux en direct</p><h1 className="mt-1 text-2xl font-semibold">{shared ? "Passagers sur votre trajet" : "Courses à proximité"}</h1></div>
         <span className="shrink-0 rounded-md border border-border bg-secondary px-3 py-1.5 text-[10px] text-muted-foreground">{offers.length} disponibles</span>
       </div>
       {!airConditioning && <p className="mb-4 flex items-center gap-2 text-xs text-muted-foreground"><Wind className="size-4 text-primary" />Les demandes exigeant la climatisation sont masquées.</p>}
-      {offers.length === 0 && <p className="glass-panel p-6 text-center text-sm text-muted-foreground">Aucune demande dans un rayon de 5 km. Actualisation automatique toutes les 10 secondes.</p>}
+      {offers.length === 0 && <p className="glass-panel p-6 text-center text-sm text-muted-foreground">{shared ? "Aucun passager dans votre direction pour l’instant." : "Aucune demande dans un rayon de 5 km."} Actualisation automatique toutes les 10 secondes.</p>}
       <div className="space-y-4">
         {offers.map((ride) => <RideCard key={ride.id} ride={ride} busy={busy} onTake={() => onTake(ride.id)} />)}
       </div>
