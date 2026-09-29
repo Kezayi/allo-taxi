@@ -98,6 +98,7 @@ function getPosition(): Promise<{ lat: number; lng: number } | null> {
 
 function ClientJourney() {
   const [step, setStep] = useState<Step>("request");
+  const [eta, setEta] = useState<Eta | null>(null);
   const [identityOpen, setIdentityOpen] = useState(true);
   const [ride, setRide] = useState<RideRequest>(initialRide);
   const [errors, setErrors] = useState<Record<string, string>>({});
