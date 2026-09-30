@@ -741,8 +741,8 @@ export type Database = {
       }
       rides: {
         Row: {
-          access_token: string
-          access_token_hash: string | null
+          access_token: string | null
+          access_token_hash: string
           allow_sharing: boolean
           anchor_ride_id: string | null
           boarded_at: string | null
@@ -774,8 +774,8 @@ export type Database = {
           wants_ac: boolean
         }
         Insert: {
-          access_token: string
-          access_token_hash?: string | null
+          access_token?: string | null
+          access_token_hash: string
           allow_sharing?: boolean
           anchor_ride_id?: string | null
           boarded_at?: string | null
@@ -807,8 +807,8 @@ export type Database = {
           wants_ac?: boolean
         }
         Update: {
-          access_token?: string
-          access_token_hash?: string | null
+          access_token?: string | null
+          access_token_hash?: string
           allow_sharing?: boolean
           anchor_ride_id?: string | null
           boarded_at?: string | null
@@ -1062,8 +1062,8 @@ export type Database = {
       driver_anchor_ride: {
         Args: { _uid: string }
         Returns: {
-          access_token: string
-          access_token_hash: string | null
+          access_token: string | null
+          access_token_hash: string
           allow_sharing: boolean
           anchor_ride_id: string | null
           boarded_at: string | null
