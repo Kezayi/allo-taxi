@@ -120,6 +120,13 @@
       "when": 1790782450502,
       "tag": "0016_v1_driver_presence",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790782952253,
+      "tag": "0017_v1_finance_foundations",
+      "breakpoints": true
     }
   ]
 }
