@@ -53,6 +53,65 @@ export type Database = {
         }
         Relationships: []
       }
+      driver_day_passes: {
+        Row: {
+          activated_at: string | null
+          created_at: string
+          driver_id: string
+          expires_at: string
+          grant_reason: string | null
+          granted_by: string | null
+          id: string
+          legacy_subscription_id: string | null
+          mode: string
+          origin: string
+          price_fcfa: number
+          service_day: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          activated_at?: string | null
+          created_at?: string
+          driver_id: string
+          expires_at: string
+          grant_reason?: string | null
+          granted_by?: string | null
+          id?: string
+          legacy_subscription_id?: string | null
+          mode: string
+          origin: string
+          price_fcfa?: number
+          service_day: string
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          activated_at?: string | null
+          created_at?: string
+          driver_id?: string
+          expires_at?: string
+          grant_reason?: string | null
+          granted_by?: string | null
+          id?: string
+          legacy_subscription_id?: string | null
+          mode?: string
+          origin?: string
+          price_fcfa?: number
+          service_day?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_day_passes_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       driver_document_checks: {
         Row: {
           ai_model: string | null
@@ -350,6 +409,100 @@ export type Database = {
             columns: ["active_vehicle_id"]
             isOneToOne: false
             referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_transactions: {
+        Row: {
+          amount_base_fcfa: number
+          amount_total_fcfa: number
+          created_at: string
+          currency: string
+          driver_day_pass_id: string | null
+          error_code: string | null
+          error_message: string | null
+          fees_fcfa: number
+          id: string
+          internal_reference: string
+          operation_type: string
+          operator: string | null
+          payer_driver_id: string | null
+          payer_msisdn: string | null
+          provider: string
+          provider_metadata: Json
+          refund_of_id: string | null
+          resolved_at: string | null
+          status: string
+          updated_at: string
+          xfin_reference: string | null
+        }
+        Insert: {
+          amount_base_fcfa: number
+          amount_total_fcfa: number
+          created_at?: string
+          currency?: string
+          driver_day_pass_id?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          fees_fcfa?: number
+          id?: string
+          internal_reference: string
+          operation_type: string
+          operator?: string | null
+          payer_driver_id?: string | null
+          payer_msisdn?: string | null
+          provider: string
+          provider_metadata?: Json
+          refund_of_id?: string | null
+          resolved_at?: string | null
+          status?: string
+          updated_at?: string
+          xfin_reference?: string | null
+        }
+        Update: {
+          amount_base_fcfa?: number
+          amount_total_fcfa?: number
+          created_at?: string
+          currency?: string
+          driver_day_pass_id?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          fees_fcfa?: number
+          id?: string
+          internal_reference?: string
+          operation_type?: string
+          operator?: string | null
+          payer_driver_id?: string | null
+          payer_msisdn?: string | null
+          provider?: string
+          provider_metadata?: Json
+          refund_of_id?: string | null
+          resolved_at?: string | null
+          status?: string
+          updated_at?: string
+          xfin_reference?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_transactions_driver_day_pass_id_fkey"
+            columns: ["driver_day_pass_id"]
+            isOneToOne: false
+            referencedRelation: "driver_day_passes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_payer_driver_id_fkey"
+            columns: ["payer_driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_refund_of_id_fkey"
+            columns: ["refund_of_id"]
+            isOneToOne: false
+            referencedRelation: "payment_transactions"
             referencedColumns: ["id"]
           },
         ]
@@ -913,6 +1066,7 @@ export type Database = {
         Args: { _lat1: number; _lat2: number; _lng1: number; _lng2: number }
         Returns: number
       }
+      libreville_day_end: { Args: { _day: string }; Returns: string }
       load_demo_data: { Args: never; Returns: undefined }
       log_ride_resolution: {
         Args: {
