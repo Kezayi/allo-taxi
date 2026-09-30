@@ -309,7 +309,14 @@ function ClientJourney() {
   }
 
   async function cancelRequest() {
-    if (active) await supabase.rpc("cancel_ride_public", { _ride_id: active.id, _token: active.token });
+    if (active) {
+      const { error } = await supabase.rpc("cancel_ride_public", { _ride_id: active.id, _token: active.token });
+      if (error) {
+        // Erreur réseau : on ne perd jamais la course localement
+        setSubmitError("Annulation impossible pour le moment (réseau). Réessayez.");
+        return;
+      }
+    }
     resetAll();
   }
 
