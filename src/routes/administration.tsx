@@ -210,7 +210,14 @@ function AdministrationDashboard() {
   const [tab, setTab] = useState<AdminTab>("overview");
   const [dataVersion, setDataVersion] = useState(0);
   const [sysSettings, setSysSettings] = useState<SystemSettings>(defaultSettings);
-  useEffect(() => { if (user) void fetchSystemSettings().then(setSysSettings); }, [user]);
+  useEffect(() => {
+    if (!user || (!isSuperAdmin && !isAssociate)) return;
+    if (isSuperAdmin) { void fetchSystemSettings().then(setSysSettings); return; }
+    // Associé : forfait lu via RPC dédiée (system_settings réservée au Superadmin)
+    void supabase.rpc("get_daily_price").then(({ data, error }) => {
+      if (!error && typeof data === "number") setSysSettings((s) => ({ ...s, dailyPrice: data }));
+    });
+  }, [user, isSuperAdmin, isAssociate]);
 
   function updateDraft<K extends keyof Partner>(key: K, value: Partner[K]) {
     setDraft((current) => ({ ...current, [key]: value }));

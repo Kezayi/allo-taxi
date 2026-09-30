@@ -581,6 +581,7 @@ export type Database = {
           today_amount: number
         }[]
       }
+      get_daily_price: { Args: never; Returns: number }
       get_localized_pool_for_driver: {
         Args: { _lat: number; _lng: number; _radius_km: number }
         Returns: {
