@@ -53,6 +53,141 @@ export type Database = {
         }
         Relationships: []
       }
+      driver_document_checks: {
+        Row: {
+          ai_model: string | null
+          anomalies: Json
+          confidence: number | null
+          created_at: string
+          decision: string | null
+          document_id: string
+          extracted_data: Json
+          id: string
+          method: string
+          result: string
+          reviewer_id: string | null
+        }
+        Insert: {
+          ai_model?: string | null
+          anomalies?: Json
+          confidence?: number | null
+          created_at?: string
+          decision?: string | null
+          document_id: string
+          extracted_data?: Json
+          id?: string
+          method: string
+          result: string
+          reviewer_id?: string | null
+        }
+        Update: {
+          ai_model?: string | null
+          anomalies?: Json
+          confidence?: number | null
+          created_at?: string
+          decision?: string | null
+          document_id?: string
+          extracted_data?: Json
+          id?: string
+          method?: string
+          result?: string
+          reviewer_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_document_checks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "driver_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      driver_documents: {
+        Row: {
+          created_at: string
+          doc_type: string
+          driver_id: string
+          expires_on: string | null
+          id: string
+          is_current: boolean
+          issued_on: string | null
+          mime_type: string | null
+          sha256: string | null
+          size_bytes: number | null
+          status: string
+          storage_bucket: string
+          storage_path: string
+          supersedes_id: string | null
+          updated_at: string
+          uploaded_by: string
+          vehicle_id: string | null
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          doc_type: string
+          driver_id: string
+          expires_on?: string | null
+          id?: string
+          is_current?: boolean
+          issued_on?: string | null
+          mime_type?: string | null
+          sha256?: string | null
+          size_bytes?: number | null
+          status?: string
+          storage_bucket?: string
+          storage_path: string
+          supersedes_id?: string | null
+          updated_at?: string
+          uploaded_by: string
+          vehicle_id?: string | null
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          doc_type?: string
+          driver_id?: string
+          expires_on?: string | null
+          id?: string
+          is_current?: boolean
+          issued_on?: string | null
+          mime_type?: string | null
+          sha256?: string | null
+          size_bytes?: number | null
+          status?: string
+          storage_bucket?: string
+          storage_path?: string
+          supersedes_id?: string | null
+          updated_at?: string
+          uploaded_by?: string
+          vehicle_id?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_documents_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "driver_documents_supersedes_id_fkey"
+            columns: ["supersedes_id"]
+            isOneToOne: false
+            referencedRelation: "driver_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "driver_documents_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       driver_penalties: {
         Row: {
           created_at: string
@@ -88,6 +223,7 @@ export type Database = {
       }
       drivers: {
         Row: {
+          active_vehicle_id: string | null
           created_at: string
           deleted_at: string | null
           first_name: string
@@ -97,15 +233,19 @@ export type Database = {
           is_online: boolean
           last_lat: number | null
           last_lng: number | null
+          last_name: string | null
           last_seen_at: string | null
+          onboarding_status: string
           phone: string
           status: string
           updated_at: string
           user_id: string
           vehicle_model: string
           vehicle_plate: string
+          whatsapp_phone: string | null
         }
         Insert: {
+          active_vehicle_id?: string | null
           created_at?: string
           deleted_at?: string | null
           first_name: string
@@ -115,15 +255,19 @@ export type Database = {
           is_online?: boolean
           last_lat?: number | null
           last_lng?: number | null
+          last_name?: string | null
           last_seen_at?: string | null
+          onboarding_status?: string
           phone: string
           status?: string
           updated_at?: string
           user_id: string
           vehicle_model: string
           vehicle_plate: string
+          whatsapp_phone?: string | null
         }
         Update: {
+          active_vehicle_id?: string | null
           created_at?: string
           deleted_at?: string | null
           first_name?: string
@@ -133,15 +277,26 @@ export type Database = {
           is_online?: boolean
           last_lat?: number | null
           last_lng?: number | null
+          last_name?: string | null
           last_seen_at?: string | null
+          onboarding_status?: string
           phone?: string
           status?: string
           updated_at?: string
           user_id?: string
           vehicle_model?: string
           vehicle_plate?: string
+          whatsapp_phone?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "drivers_active_vehicle_id_fkey"
+            columns: ["active_vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -447,6 +602,80 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      vehicles: {
+        Row: {
+          capacity_source: string | null
+          color: string | null
+          created_at: string
+          deleted_at: string | null
+          driver_id: string
+          has_ac: boolean
+          id: string
+          is_active: boolean
+          is_demo: boolean
+          make: string | null
+          model: string
+          passenger_capacity: number | null
+          plate: string
+          plate_normalized: string | null
+          registered_seats: number | null
+          updated_at: string
+          validated_at: string | null
+          validated_by: string | null
+          validation_status: string
+        }
+        Insert: {
+          capacity_source?: string | null
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          driver_id: string
+          has_ac?: boolean
+          id?: string
+          is_active?: boolean
+          is_demo?: boolean
+          make?: string | null
+          model: string
+          passenger_capacity?: number | null
+          plate: string
+          plate_normalized?: string | null
+          registered_seats?: number | null
+          updated_at?: string
+          validated_at?: string | null
+          validated_by?: string | null
+          validation_status?: string
+        }
+        Update: {
+          capacity_source?: string | null
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          driver_id?: string
+          has_ac?: boolean
+          id?: string
+          is_active?: boolean
+          is_demo?: boolean
+          make?: string | null
+          model?: string
+          passenger_capacity?: number | null
+          plate?: string
+          plate_normalized?: string | null
+          registered_seats?: number | null
+          updated_at?: string
+          validated_at?: string | null
+          validated_by?: string | null
+          validation_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehicles_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["user_id"]
+          },
+        ]
       }
     }
     Views: {
