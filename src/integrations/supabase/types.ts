@@ -636,6 +636,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      normalize_plate: { Args: { _plate: string }; Returns: string }
       reset_demo_data: { Args: never; Returns: undefined }
       ride_same_direction: {
         Args: {
