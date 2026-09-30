@@ -742,6 +742,7 @@ export type Database = {
       rides: {
         Row: {
           access_token: string
+          access_token_hash: string | null
           allow_sharing: boolean
           anchor_ride_id: string | null
           boarded_at: string | null
@@ -755,19 +756,26 @@ export type Database = {
           dropoff_location: string
           id: string
           is_demo: boolean
+          passenger_count: number | null
           payment_method: string
           pickup_lat: number | null
           pickup_lng: number | null
           pickup_location: string
+          price_final: number | null
+          price_final_confirmed_at: string | null
           price_proposed: number
           resolved_at: string | null
           started_negotiation_at: string | null
           status: string
+          status_v2: string | null
+          status_v2_changed_at: string | null
           updated_at: string
+          vehicle_id: string | null
           wants_ac: boolean
         }
         Insert: {
           access_token: string
+          access_token_hash?: string | null
           allow_sharing?: boolean
           anchor_ride_id?: string | null
           boarded_at?: string | null
@@ -781,19 +789,26 @@ export type Database = {
           dropoff_location: string
           id?: string
           is_demo?: boolean
+          passenger_count?: number | null
           payment_method: string
           pickup_lat?: number | null
           pickup_lng?: number | null
           pickup_location: string
+          price_final?: number | null
+          price_final_confirmed_at?: string | null
           price_proposed: number
           resolved_at?: string | null
           started_negotiation_at?: string | null
           status?: string
+          status_v2?: string | null
+          status_v2_changed_at?: string | null
           updated_at?: string
+          vehicle_id?: string | null
           wants_ac?: boolean
         }
         Update: {
           access_token?: string
+          access_token_hash?: string | null
           allow_sharing?: boolean
           anchor_ride_id?: string | null
           boarded_at?: string | null
@@ -807,15 +822,21 @@ export type Database = {
           dropoff_location?: string
           id?: string
           is_demo?: boolean
+          passenger_count?: number | null
           payment_method?: string
           pickup_lat?: number | null
           pickup_lng?: number | null
           pickup_location?: string
+          price_final?: number | null
+          price_final_confirmed_at?: string | null
           price_proposed?: number
           resolved_at?: string | null
           started_negotiation_at?: string | null
           status?: string
+          status_v2?: string | null
+          status_v2_changed_at?: string | null
           updated_at?: string
+          vehicle_id?: string | null
           wants_ac?: boolean
         }
         Relationships: [
@@ -824,6 +845,13 @@ export type Database = {
             columns: ["client_identity_id"]
             isOneToOne: false
             referencedRelation: "client_identities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rides_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
             referencedColumns: ["id"]
           },
         ]
@@ -1035,6 +1063,7 @@ export type Database = {
         Args: { _uid: string }
         Returns: {
           access_token: string
+          access_token_hash: string | null
           allow_sharing: boolean
           anchor_ride_id: string | null
           boarded_at: string | null
@@ -1048,15 +1077,21 @@ export type Database = {
           dropoff_location: string
           id: string
           is_demo: boolean
+          passenger_count: number | null
           payment_method: string
           pickup_lat: number | null
           pickup_lng: number | null
           pickup_location: string
+          price_final: number | null
+          price_final_confirmed_at: string | null
           price_proposed: number
           resolved_at: string | null
           started_negotiation_at: string | null
           status: string
+          status_v2: string | null
+          status_v2_changed_at: string | null
           updated_at: string
+          vehicle_id: string | null
           wants_ac: boolean
         }
         SetofOptions: {
