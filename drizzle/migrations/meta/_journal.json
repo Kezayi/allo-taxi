@@ -78,6 +78,20 @@
       "when": 1790714290049,
       "tag": "0010_optional_route_lock",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790778895782,
+      "tag": "0011_lot0_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790778990258,
+      "tag": "0012_lot0_fix_sync_ride_public_status",
+      "breakpoints": true
     }
   ]
 }

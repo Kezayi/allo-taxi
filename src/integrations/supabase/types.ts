@@ -476,6 +476,26 @@ export type Database = {
         Args: { _lat1: number; _lat2: number; _lng1: number; _lng2: number }
         Returns: Record<string, unknown>
       }
+      create_ride_public: {
+        Args: {
+          _allow_sharing: boolean
+          _client_name: string
+          _client_phone: string
+          _dropoff_lat?: number
+          _dropoff_lng?: number
+          _dropoff_location: string
+          _payment_method: string
+          _pickup_lat?: number
+          _pickup_lng?: number
+          _pickup_location: string
+          _price: number
+          _wants_ac: boolean
+        }
+        Returns: {
+          id: string
+          token: string
+        }[]
+      }
       driver_anchor_ride: {
         Args: { _uid: string }
         Returns: {
@@ -580,6 +600,19 @@ export type Database = {
           active_passengers: number
           drivers_online: number
           matches_today: number
+        }[]
+      }
+      get_ride_status: {
+        Args: { _ride_id: string; _token: string }
+        Returns: {
+          chauffeur_first_name: string
+          chauffeur_phone: string
+          driver_distance_km: number
+          eta_minutes: number
+          status: string
+          updated_at: string
+          vehicle_model: string
+          vehicle_plate: string
         }[]
       }
       has_role: {

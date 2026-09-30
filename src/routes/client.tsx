@@ -178,6 +178,7 @@ function ClientJourney() {
 
   // Écoute temps réel du statut public de la course
   const activeId = active?.id;
+  const activeToken = active?.token;
   const listening = step === "waiting" || step === "matched";
   useEffect(() => {
     if (!activeId || !listening) return;
@@ -224,15 +225,15 @@ function ClientJourney() {
         setSubmitError("Votre demande a expiré. Vous pouvez la republier.");
       }
     };
-    const poll = () => supabase.from("ride_public_status").select("*").eq("ride_id", activeId).maybeSingle().then(({ data }) => apply(data));
+    // Suivi sécurisé : uniquement la course dont on détient le jeton (polling 5 s, pas de Realtime public)
+    const poll = () => supabase.rpc("get_ride_status", { _ride_id: activeId, _token: activeToken ?? "" }).then(({ data, error }) => {
+      if (error) return; // erreur réseau : on conserve la course localement
+      apply(data?.[0] ?? null);
+    });
     void poll();
     const timer = window.setInterval(poll, 5000);
-    const channel = supabase
-      .channel(`ride-${activeId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "ride_public_status", filter: `ride_id=eq.${activeId}` }, (payload) => apply(payload.new as Parameters<typeof apply>[0]))
-      .subscribe();
-    return () => { window.clearInterval(timer); void supabase.removeChannel(channel); };
-  }, [activeId, listening]);
+    return () => { window.clearInterval(timer); };
+  }, [activeId, activeToken, listening]);
 
   useEffect(() => {
     if (step !== "matched") return;
@@ -266,33 +267,34 @@ function ClientJourney() {
     askNotificationPermission();
     setSubmitting(true);
     const [position, dropoff] = await Promise.all([getPosition(), parsed.data.shared ? geocodeDestination(parsed.data.destination) : Promise.resolve(null)]);
-    const id = crypto.randomUUID();
-    const token = crypto.randomUUID();
-    const { error } = await supabase.from("rides").insert({
-      id,
-      access_token: token,
-      client_name: parsed.data.firstName,
-      client_phone: `+241${parsed.data.phone.replace(/\D/g, "")}`,
-      pickup_location: parsed.data.pickup,
-      dropoff_location: parsed.data.destination,
-      pickup_lat: position?.lat ?? null,
-      pickup_lng: position?.lng ?? null,
-      price_proposed: parsed.data.price,
-      payment_method: paymentLabels[parsed.data.payment],
-      wants_ac: parsed.data.comfort === "climatise",
-      allow_sharing: parsed.data.shared,
-      dropoff_lat: dropoff?.lat ?? null,
-      dropoff_lng: dropoff?.lng ?? null,
+    const { data: created, error } = await supabase.rpc("create_ride_public", {
+      _client_name: parsed.data.firstName,
+      _client_phone: `+241${parsed.data.phone.replace(/\D/g, "")}`,
+      _pickup_location: parsed.data.pickup,
+      _dropoff_location: parsed.data.destination,
+      _price: parsed.data.price,
+      _payment_method: paymentLabels[parsed.data.payment],
+      _wants_ac: parsed.data.comfort === "climatise",
+      _allow_sharing: parsed.data.shared,
+      // Coordonnées absentes = GPS réellement indisponible (NULL côté serveur)
+      ...(position ? { _pickup_lat: position.lat, _pickup_lng: position.lng } : {}),
+      ...(dropoff ? { _dropoff_lat: dropoff.lat, _dropoff_lng: dropoff.lng } : {}),
     });
     setSubmitting(false);
-    if (error) {
-      setSubmitError(error.message.includes("ACTIVE_RIDE_EXISTS")
+    const row = created?.[0];
+    if (error || !row) {
+      const msg = error?.message ?? "";
+      setSubmitError(msg.includes("ACTIVE_RIDE_EXISTS")
         ? "Une course est déjà en cours avec ce numéro. Annulez-la avant d’en publier une nouvelle."
-        : navigator.onLine ? "La demande n’a pas pu être publiée. Vérifiez vos informations." : "Pas de réseau. Réessayez dès le retour de la connexion.");
+        : msg.includes("RATE_LIMITED")
+          ? "Trop de demandes publiées avec ce numéro en une heure. Réessayez un peu plus tard."
+          : msg.includes("INVALID_DATA")
+            ? "Certaines informations sont invalides. Vérifiez votre demande."
+            : navigator.onLine ? "La demande n’a pas pu être publiée. Vérifiez vos informations." : "Pas de réseau. Réessayez dès le retour de la connexion.");
       return;
     }
     setRide(parsed.data);
-    setActive({ id, token, ride: parsed.data, driver: null });
+    setActive({ id: row.id, token: row.token, ride: parsed.data, driver: null });
     setStep("waiting");
   }
 
@@ -306,7 +308,14 @@ function ClientJourney() {
   }
 
   async function cancelRequest() {
-    if (active) await supabase.rpc("cancel_ride_public", { _ride_id: active.id, _token: active.token });
+    if (active) {
+      const { error } = await supabase.rpc("cancel_ride_public", { _ride_id: active.id, _token: active.token });
+      if (error) {
+        // Erreur réseau : on ne perd jamais la course localement
+        setSubmitError("Annulation impossible pour le moment (réseau). Réessayez.");
+        return;
+      }
+    }
     resetAll();
   }
 
