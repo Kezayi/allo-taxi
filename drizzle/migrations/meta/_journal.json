@@ -92,6 +92,13 @@
       "when": 1790778990258,
       "tag": "0012_lot0_fix_sync_ride_public_status",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790779564364,
+      "tag": "0013_lot0d_security_closure",
+      "breakpoints": true
     }
   ]
 }
