@@ -221,6 +221,62 @@ export type Database = {
         }
         Relationships: []
       }
+      driver_presence: {
+        Row: {
+          accepting_new_shared: boolean
+          accuracy_m: number | null
+          auto_closed_at: string | null
+          availability: string
+          created_at: string
+          driver_id: string
+          heading_deg: number | null
+          last_heartbeat_at: string | null
+          lat: number | null
+          lng: number | null
+          position_at: string | null
+          updated_at: string
+          went_online_at: string | null
+        }
+        Insert: {
+          accepting_new_shared?: boolean
+          accuracy_m?: number | null
+          auto_closed_at?: string | null
+          availability?: string
+          created_at?: string
+          driver_id: string
+          heading_deg?: number | null
+          last_heartbeat_at?: string | null
+          lat?: number | null
+          lng?: number | null
+          position_at?: string | null
+          updated_at?: string
+          went_online_at?: string | null
+        }
+        Update: {
+          accepting_new_shared?: boolean
+          accuracy_m?: number | null
+          auto_closed_at?: string | null
+          availability?: string
+          created_at?: string
+          driver_id?: string
+          heading_deg?: number | null
+          last_heartbeat_at?: string | null
+          lat?: number | null
+          lng?: number | null
+          position_at?: string | null
+          updated_at?: string
+          went_online_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_presence_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: true
+            referencedRelation: "drivers"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       drivers: {
         Row: {
           active_vehicle_id: string | null
