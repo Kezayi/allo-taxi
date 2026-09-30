@@ -148,6 +148,20 @@
       "when": 1790785437077,
       "tag": "0020_v1_token_hash_only",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790785913911,
+      "tag": "0021_v1_ride_assignments",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790785963242,
+      "tag": "0022_v1_ride_assignments_skip_demo_driver",
+      "breakpoints": true
     }
   ]
 }

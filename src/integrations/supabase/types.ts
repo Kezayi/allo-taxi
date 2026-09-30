@@ -632,6 +632,70 @@ export type Database = {
         }
         Relationships: []
       }
+      ride_assignments: {
+        Row: {
+          confirmed_at: string | null
+          created_at: string
+          driver_id: string
+          end_reason: string | null
+          ended_at: string | null
+          id: string
+          ride_id: string
+          source: string
+          started_at: string
+          status: string
+          vehicle_id: string | null
+        }
+        Insert: {
+          confirmed_at?: string | null
+          created_at?: string
+          driver_id: string
+          end_reason?: string | null
+          ended_at?: string | null
+          id?: string
+          ride_id: string
+          source: string
+          started_at: string
+          status: string
+          vehicle_id?: string | null
+        }
+        Update: {
+          confirmed_at?: string | null
+          created_at?: string
+          driver_id?: string
+          end_reason?: string | null
+          ended_at?: string | null
+          id?: string
+          ride_id?: string
+          source?: string
+          started_at?: string
+          status?: string
+          vehicle_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_assignments_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "ride_assignments_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_assignments_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ride_logs: {
         Row: {
           chauffeur_id: string | null
