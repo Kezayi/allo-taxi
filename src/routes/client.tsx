@@ -272,14 +272,13 @@ function ClientJourney() {
       _client_phone: `+241${parsed.data.phone.replace(/\D/g, "")}`,
       _pickup_location: parsed.data.pickup,
       _dropoff_location: parsed.data.destination,
-      _pickup_lat: position?.lat,
-      _pickup_lng: position?.lng,
       _price: parsed.data.price,
       _payment_method: paymentLabels[parsed.data.payment],
       _wants_ac: parsed.data.comfort === "climatise",
       _allow_sharing: parsed.data.shared,
-      _dropoff_lat: dropoff?.lat,
-      _dropoff_lng: dropoff?.lng,
+      // Coordonnées absentes = GPS réellement indisponible (NULL côté serveur)
+      ...(position ? { _pickup_lat: position.lat, _pickup_lng: position.lng } : {}),
+      ...(dropoff ? { _dropoff_lat: dropoff.lat, _dropoff_lng: dropoff.lng } : {}),
     });
     setSubmitting(false);
     const row = created?.[0];
