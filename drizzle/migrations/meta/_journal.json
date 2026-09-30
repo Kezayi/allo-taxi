@@ -127,6 +127,13 @@
       "when": 1790782952253,
       "tag": "0017_v1_finance_foundations",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790783588482,
+      "tag": "0018_v1_client_identities",
+      "breakpoints": true
     }
   ]
 }

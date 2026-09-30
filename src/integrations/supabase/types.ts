@@ -53,6 +53,92 @@ export type Database = {
         }
         Relationships: []
       }
+      client_identities: {
+        Row: {
+          created_at: string
+          first_seen_at: string
+          id: string
+          last_display_name: string | null
+          last_seen_at: string
+          phone: string
+          phone_verified_at: string | null
+          trust_level: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          first_seen_at: string
+          id?: string
+          last_display_name?: string | null
+          last_seen_at: string
+          phone: string
+          phone_verified_at?: string | null
+          trust_level?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          first_seen_at?: string
+          id?: string
+          last_display_name?: string | null
+          last_seen_at?: string
+          phone?: string
+          phone_verified_at?: string | null
+          trust_level?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      client_restrictions: {
+        Row: {
+          client_identity_id: string
+          created_at: string
+          created_by: string
+          ends_at: string | null
+          id: string
+          lift_reason: string | null
+          lifted_at: string | null
+          lifted_by: string | null
+          reason: string
+          restriction_type: string
+          starts_at: string
+        }
+        Insert: {
+          client_identity_id: string
+          created_at?: string
+          created_by: string
+          ends_at?: string | null
+          id?: string
+          lift_reason?: string | null
+          lifted_at?: string | null
+          lifted_by?: string | null
+          reason: string
+          restriction_type: string
+          starts_at?: string
+        }
+        Update: {
+          client_identity_id?: string
+          created_at?: string
+          created_by?: string
+          ends_at?: string | null
+          id?: string
+          lift_reason?: string | null
+          lifted_at?: string | null
+          lifted_by?: string | null
+          reason?: string
+          restriction_type?: string
+          starts_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_restrictions_client_identity_id_fkey"
+            columns: ["client_identity_id"]
+            isOneToOne: false
+            referencedRelation: "client_identities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       driver_day_passes: {
         Row: {
           activated_at: string | null
@@ -660,6 +746,7 @@ export type Database = {
           anchor_ride_id: string | null
           boarded_at: string | null
           chauffeur_id: string | null
+          client_identity_id: string | null
           client_name: string
           client_phone: string
           created_at: string
@@ -685,6 +772,7 @@ export type Database = {
           anchor_ride_id?: string | null
           boarded_at?: string | null
           chauffeur_id?: string | null
+          client_identity_id?: string | null
           client_name: string
           client_phone: string
           created_at?: string
@@ -710,6 +798,7 @@ export type Database = {
           anchor_ride_id?: string | null
           boarded_at?: string | null
           chauffeur_id?: string | null
+          client_identity_id?: string | null
           client_name?: string
           client_phone?: string
           created_at?: string
@@ -729,7 +818,15 @@ export type Database = {
           updated_at?: string
           wants_ac?: boolean
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "rides_client_identity_id_fkey"
+            columns: ["client_identity_id"]
+            isOneToOne: false
+            referencedRelation: "client_identities"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       subscriptions: {
         Row: {
@@ -942,6 +1039,7 @@ export type Database = {
           anchor_ride_id: string | null
           boarded_at: string | null
           chauffeur_id: string | null
+          client_identity_id: string | null
           client_name: string
           client_phone: string
           created_at: string
