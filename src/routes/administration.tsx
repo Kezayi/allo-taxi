@@ -69,6 +69,7 @@ import {
   type SystemSettings,
 } from "@/components/admin/backoffice-modules";
 import { DriverDossiers } from "@/components/admin/driver-dossiers";
+import { DashboardV1, FinanceV1, RestrictionsAuditV1, RidesRegisterV1 } from "@/components/admin/lot6-modules";
 
 export const Route = createFileRoute("/administration")({
   head: () => ({
@@ -352,17 +353,22 @@ function AdministrationDashboard() {
       <div key={`${tab}-${dataVersion}`} className="animate-journey-in">
         {tab === "overview" && (
           <>
-            <OverviewStats />
-            <FinancialOverview role={role} share={currentShare} finance={finance} dailyPrice={sysSettings.dailyPrice} />
+            {role === "super_admin" ? <DashboardV1 /> : <OverviewStats />}
+            {role !== "super_admin" && <FinancialOverview role={role} share={currentShare} finance={finance} dailyPrice={sysSettings.dailyPrice} />}
             <DemoDataControls onNotice={setNotice} onChanged={() => { setDataVersion((v) => v + 1); void loadData(); }} />
           </>
         )}
         {tab === "fleet" && <FleetManagement onNotice={setNotice} maskPhone={maskPhone} />}
         {tab === "dossiers" && <DriverDossiers onNotice={setNotice} />}
-        {tab === "dispatch" && <LiveDispatch timeoutMin={sysSettings.timeoutMin} />}
+        {tab === "dispatch" && (
+          <>
+            <LiveDispatch timeoutMin={sysSettings.timeoutMin} />
+            {role === "super_admin" && <RidesRegisterV1 onNotice={setNotice} />}
+          </>
+        )}
         {tab === "finance" && (
           <>
-            <FinancialOverview role={role} share={currentShare} finance={finance} dailyPrice={sysSettings.dailyPrice} />
+            {role === "super_admin" ? <FinanceV1 onNotice={setNotice} /> : <FinancialOverview role={role} share={currentShare} finance={finance} dailyPrice={sysSettings.dailyPrice} />}
             <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,.95fr)]">
               <PartnerConfiguration pin={associatePin} onPinChange={setAssociatePin}
                 draft={draft}
@@ -377,7 +383,7 @@ function AdministrationDashboard() {
             </div>
           </>
         )}
-        {tab === "audit" && (<><AuditRegistry /><DisputesAndSanctions onNotice={setNotice} /></>)}
+        {tab === "audit" && (<>{role === "super_admin" && <RestrictionsAuditV1 onNotice={setNotice} />}<AuditRegistry /><DisputesAndSanctions onNotice={setNotice} /></>)}
         {tab === "settings" && <SystemSettingsPanel settings={sysSettings} onSaved={setSysSettings} onNotice={setNotice} />}
       </div>
     </>,
