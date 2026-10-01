@@ -357,6 +357,7 @@ function AdministrationDashboard() {
           </>
         )}
         {tab === "fleet" && <FleetManagement onNotice={setNotice} maskPhone={maskPhone} />}
+        {tab === "dossiers" && <DriverDossiers onNotice={setNotice} />}
         {tab === "dispatch" && <LiveDispatch timeoutMin={sysSettings.timeoutMin} />}
         {tab === "finance" && (
           <>
