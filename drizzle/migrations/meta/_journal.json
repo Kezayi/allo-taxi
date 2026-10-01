@@ -176,6 +176,13 @@
       "when": 1790843634116,
       "tag": "0024_v1_driver_restrictions",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790845421354,
+      "tag": "0025_v1_associates_share_rules",
+      "breakpoints": true
     }
   ]
 }

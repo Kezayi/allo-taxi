@@ -14,6 +14,94 @@ export type Database = {
   }
   public: {
     Tables: {
+      associate_share_rules: {
+        Row: {
+          associate_id: string
+          created_at: string
+          created_by: string | null
+          effective_from: string
+          effective_to: string | null
+          id: string
+          share_percent: number
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          associate_id: string
+          created_at?: string
+          created_by?: string | null
+          effective_from: string
+          effective_to?: string | null
+          id?: string
+          share_percent: number
+          source: string
+          updated_at?: string
+        }
+        Update: {
+          associate_id?: string
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          share_percent?: number
+          source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "associate_share_rules_associate_id_fkey"
+            columns: ["associate_id"]
+            isOneToOne: false
+            referencedRelation: "associates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      associates: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          display_name: string
+          id: string
+          is_active: boolean
+          partner_key: string
+          phone: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          display_name: string
+          id?: string
+          is_active?: boolean
+          partner_key: string
+          phone?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          display_name?: string
+          id?: string
+          is_active?: boolean
+          partner_key?: string
+          phone?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "associates_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       associates_settings: {
         Row: {
           created_at: string
