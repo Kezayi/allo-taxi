@@ -364,3 +364,43 @@ export function RestrictionsAuditV1({ onNotice }: { onNotice: Notice }) {
     </>
   );
 }
+
+/* LOT 7 — Présence Chauffeurs (position courante uniquement, sans historique ni carte) */
+const age = (sec: unknown) => {
+  if (sec === null || sec === undefined) return "—";
+  const n = Number(sec);
+  if (n < 60) return `${n} s`;
+  if (n < 3600) return `${Math.floor(n / 60)} min`;
+  return `${Math.floor(n / 3600)} h`;
+};
+export function DriverPresenceV1() {
+  const { data, error, reload } = useRpc<Row>(() => supabase.rpc("admin_list_driver_presence_v1"));
+  useEffect(() => { const t = window.setInterval(() => void reload(), 30000); return () => window.clearInterval(t); }, [reload]);
+  const thr = data?.stale_threshold_sec;
+  return (
+    <Panel title="Présence des chauffeurs" subtitle={thr ? `Position obsolète au-delà de ${thr} s.` : "Seuil d’obsolescence non défini : âge affiché à titre indicatif."}>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-left text-xs">
+          <thead className="text-muted-foreground">
+            <tr>{["Chauffeur", "Plaque", "État", "Dernière position", "Âge", "Précision", "Courses", "Places"].map((h) => <th key={h} className="px-2 py-2 font-medium">{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {((data?.drivers ?? []) as Row[]).map((d, i) => (
+              <tr key={i} className="border-t border-border">
+                <td className="px-2 py-2">{s(d.first_name)}</td>
+                <td className="px-2 py-2">{s(d.vehicle_plate)}</td>
+                <td className="px-2 py-2"><span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase", d.availability === "online" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground")}>{s(d.availability)}</span></td>
+                <td className="px-2 py-2">{d.lat == null ? "—" : `${Number(d.lat).toFixed(5)}, ${Number(d.lng).toFixed(5)}`}</td>
+                <td className={cn("px-2 py-2", d.is_stale && "text-destructive")}>{age(d.position_age_sec)}{d.is_stale ? " (obsolète)" : ""}</td>
+                <td className="px-2 py-2">{d.accuracy_m == null ? "—" : `± ${Math.round(Number(d.accuracy_m))} m`}</td>
+                <td className="px-2 py-2">{s(d.active_rides)}</td>
+                <td className="px-2 py-2">{s(d.seats_engaged)} / {d.passenger_capacity == null ? "?" : s(d.passenger_capacity)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
