@@ -190,6 +190,13 @@
       "when": 1790847267195,
       "tag": "0026_v1_audit_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790848120151,
+      "tag": "0027_lot2a_driver_onboarding_backend",
+      "breakpoints": true
     }
   ]
 }

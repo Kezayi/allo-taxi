@@ -1454,6 +1454,14 @@ export type Database = {
           token: string
         }[]
       }
+      doc_type_requires_expiry: {
+        Args: { _doc_type: string }
+        Returns: boolean
+      }
+      document_effective_status: {
+        Args: { _expires_on: string; _status: string }
+        Returns: string
+      }
       driver_anchor_ride: {
         Args: { _uid: string }
         Returns: {
@@ -1548,6 +1556,10 @@ export type Database = {
         }[]
       }
       get_daily_price: { Args: never; Returns: number }
+      get_document_storage_ref: {
+        Args: { _document_id: string }
+        Returns: Json
+      }
       get_localized_pool_for_driver: {
         Args: { _lat: number; _lng: number; _radius_km: number }
         Returns: {
@@ -1561,6 +1573,7 @@ export type Database = {
           wants_ac: boolean
         }[]
       }
+      get_my_driver_onboarding: { Args: never; Returns: Json }
       get_public_activity: {
         Args: never
         Returns: {
@@ -1595,7 +1608,20 @@ export type Database = {
         Returns: number
       }
       libreville_day_end: { Args: { _day: string }; Returns: string }
+      libreville_today: { Args: never; Returns: string }
       load_demo_data: { Args: never; Returns: undefined }
+      log_audit_event: {
+        Args: {
+          _actor_id: string
+          _actor_type: string
+          _entity_id: string
+          _entity_type: string
+          _event_type: string
+          _metadata?: Json
+          _source: string
+        }
+        Returns: undefined
+      }
       log_ride_resolution: {
         Args: {
           _resolution: string
@@ -1604,6 +1630,19 @@ export type Database = {
         Returns: undefined
       }
       normalize_plate: { Args: { _plate: string }; Returns: string }
+      register_my_document: {
+        Args: {
+          _doc_type: string
+          _expires_on?: string
+          _issued_on?: string
+          _mime_type: string
+          _sha256?: string
+          _size_bytes: number
+          _storage_path: string
+          _vehicle_id?: string
+        }
+        Returns: Json
+      }
       reset_demo_data: { Args: never; Returns: undefined }
       ride_same_direction: {
         Args: {
@@ -1648,6 +1687,19 @@ export type Database = {
       update_system_settings: {
         Args: { _daily_price: number; _radius_km: number; _timeout_min: number }
         Returns: undefined
+      }
+      upsert_my_vehicle: {
+        Args: {
+          _color?: string
+          _has_ac?: boolean
+          _make?: string
+          _model?: string
+          _plate?: string
+          _registered_seats?: number
+          _set_active?: boolean
+          _vehicle_id?: string
+        }
+        Returns: Json
       }
     }
     Enums: {
