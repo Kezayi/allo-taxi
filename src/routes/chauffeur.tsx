@@ -526,6 +526,7 @@ function DriverWorkspace() {
           </nav>
         )}
         {body}
+        <CommonFooter />
       </div>
     </main>
   );
