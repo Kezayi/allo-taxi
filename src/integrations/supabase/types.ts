@@ -1523,6 +1523,7 @@ export type Database = {
           vehicle_validation: string
         }[]
       }
+      admin_list_live_rides: { Args: never; Returns: Json }
       advance_ride_v1: {
         Args: { _action: string; _ride_id: string }
         Returns: Json
@@ -1767,6 +1768,7 @@ export type Database = {
           wants_ac: boolean
         }[]
       }
+      get_my_active_rides: { Args: never; Returns: Json }
       get_my_driver_day_access: { Args: never; Returns: Json }
       get_my_driver_onboarding: { Args: never; Returns: Json }
       get_onboarding_enforcement_status: { Args: never; Returns: Json }
