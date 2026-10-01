@@ -165,7 +165,7 @@ export function FinanceV1({ onNotice }: { onNotice: Notice }) {
     onNotice("Règle de part créée."); setPct(""); void sh.reload();
   };
   const closeRule = async (id: string) => {
-    const { error } = await supabase.rpc("admin_close_associate_rule_v1", { _rule: id, _to: closeDate[id] });
+    const { error } = await supabase.rpc("admin_close_associate_rule_v1", { _rule: id, _to: closeDate[id] ?? "" });
     if (error) { onNotice(errMsg(error.message)); return; }
     onNotice("Règle clôturée."); void sh.reload();
   };
