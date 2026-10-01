@@ -696,6 +696,63 @@ export type Database = {
           },
         ]
       }
+      ride_events: {
+        Row: {
+          actor_id: string | null
+          actor_type: string
+          assignment_id: string | null
+          event_type: string
+          from_status_v2: string | null
+          id: number
+          occurred_at: string
+          payload: Json
+          ride_id: string
+          source: string
+          to_status_v2: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_type: string
+          assignment_id?: string | null
+          event_type: string
+          from_status_v2?: string | null
+          id?: never
+          occurred_at?: string
+          payload?: Json
+          ride_id: string
+          source: string
+          to_status_v2?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          actor_type?: string
+          assignment_id?: string | null
+          event_type?: string
+          from_status_v2?: string | null
+          id?: never
+          occurred_at?: string
+          payload?: Json
+          ride_id?: string
+          source?: string
+          to_status_v2?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_events_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "ride_assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_events_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ride_logs: {
         Row: {
           chauffeur_id: string | null
