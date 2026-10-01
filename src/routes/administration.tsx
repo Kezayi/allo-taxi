@@ -406,7 +406,7 @@ function FinancialOverview({ role, share, finance, dailyPrice }: { role: AdminRo
       <div className="grid gap-4 sm:grid-cols-3">
         {isSuperAdmin ? (
           <>
-            <MetricCard icon={<CircleDollarSign />} label="CA brut aujourd’hui" value={`${finance.todayRevenue.toLocaleString("fr-FR")} FCFA`} detail={`${finance.activeDrivers} taxis actifs × ${dailyPrice.toLocaleString("fr-FR")} FCFA`} featured />
+            <MetricCard icon={<CircleDollarSign />} label="Historique legacy (simulation, non encaissé)" value={`${finance.todayRevenue.toLocaleString("fr-FR")} FCFA`} detail={`Anciennes activations simulées — accès offerts V1 = 0 FCFA (tarif standard ${dailyPrice.toLocaleString("fr-FR")} FCFA)`} featured />
             <MetricCard icon={<CarFront />} label="Taxis actifs" value={String(finance.activeDrivers)} detail="Accès journée validé" />
             <MetricCard icon={<TrendingUp />} label="Évolution mensuelle" value={trend} detail="Mois en cours vs mois dernier" />
           </>
