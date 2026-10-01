@@ -335,7 +335,7 @@ function DriverWorkspace() {
   useEffect(() => {
     if (!presenceActive || !("geolocation" in navigator)) return;
     const send = () => navigator.geolocation.getCurrentPosition(
-      (pos) => { void supabase.rpc("update_driver_presence_v1", { _lat: pos.coords.latitude, _lng: pos.coords.longitude, _accuracy_m: pos.coords.accuracy, _heading_deg: pos.coords.heading ?? undefined, _position_at: new Date(pos.timestamp).toISOString() }); },
+      (pos) => { void supabase.rpc("update_driver_presence_v1", { _lat: pos.coords.latitude, _lng: pos.coords.longitude, _accuracy_m: pos.coords.accuracy, ...(pos.coords.heading != null ? { _heading_deg: pos.coords.heading } : {}), _position_at: new Date(pos.timestamp).toISOString() }); },
       () => undefined,
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 },
     );
