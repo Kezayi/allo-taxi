@@ -251,8 +251,8 @@ function DocumentRow({ doc, userId, vehicleId, onDone, onNotice }: { doc: Onboar
       _storage_path: path,
       _mime_type: file.type,
       _size_bytes: file.size,
-      _vehicle_id: doc.scope === "vehicle" ? vehicleId ?? undefined : undefined,
-      _expires_on: expiry || undefined,
+      ...(doc.scope === "vehicle" && vehicleId ? { _vehicle_id: vehicleId } : {}),
+      ...(expiry ? { _expires_on: expiry } : {}),
     });
     setBusy(false);
     if (error) {
