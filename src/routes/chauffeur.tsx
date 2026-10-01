@@ -287,7 +287,9 @@ function DriverWorkspace() {
   );
 
   let body: React.ReactNode;
-  if (loading || (user && driver === undefined)) {
+  if (user && driver && view === "dossier") {
+    body = <DriverOnboarding userId={user.id} onNotice={setNotice} />;
+  } else if (loading || (user && driver === undefined)) {
     body = <GateCard icon={<RefreshCw className="size-7 animate-spin" />} title="Chargement de votre poste…" />;
   } else if (!user) {
     body = <GateCard icon={<ShieldCheck className="size-7" />} title="Connectez-vous pour conduire." text="Votre compte chauffeur sécurise vos courses et votre abonnement du jour."><Button asChild className="mt-6 h-12 w-full font-bold shadow-gold"><Link to="/connexion" search={{ retour: "/chauffeur" }}>Se connecter</Link></Button></GateCard>;
