@@ -253,6 +253,13 @@
       "when": 1790857883664,
       "tag": "0035_lot4a_ride_workflow_v1",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790873802630,
+      "tag": "0036_lot4b_frontend_switch_v1",
+      "breakpoints": true
     }
   ]
 }

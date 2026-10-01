@@ -3,27 +3,28 @@ import {
   ArrowLeft,
   BadgeCheck,
   CarFront,
-  ChevronDown,
-  ChevronUp,
   CircleDollarSign,
   Clock3,
+  Crosshair,
+  Flag,
+  MessageCircle,
   Minus,
   Navigation,
-  Phone,
   Plus,
   ShieldCheck,
   Snowflake,
   UserRound,
+  Users,
   Wind,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { chimes } from "@/lib/chime";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
+import { chimes } from "@/lib/chime";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/client")({
@@ -40,93 +41,81 @@ export const Route = createFileRoute("/client")({
   component: ClientJourney,
 });
 
-type Step = "request" | "waiting" | "matched";
-type Comfort = "standard" | "climatise";
-type Payment = "especes" | "airtel" | "moov";
+/* ---------- Modèle ---------- */
+type Payment = "CASH" | "AIRTEL_MONEY" | "MOOV_MONEY";
+const paymentLabels: Record<Payment, string> = { CASH: "Espèces", AIRTEL_MONEY: "Airtel Money", MOOV_MONEY: "Moov Money" };
 
-type RideRequest = {
+type RideForm = {
   firstName: string;
   phone: string;
   pickup: string;
+  landmark: string;
   destination: string;
-  comfort: Comfort;
+  dropoffNote: string;
+  passengers: number | null;
+  wantsAc: boolean;
+  shared: boolean;
   payment: Payment;
   price: number;
-  shared: boolean;
 };
 
-const requestSchema = z.object({
-  firstName: z.string().trim().min(2, "Saisissez au moins 2 caractères.").max(50, "Le prénom est trop long."),
-  phone: z.string().trim().refine((value) => /^[0-9]{8,9}$/.test(value.replace(/[\s-]/g, "")), "Saisissez un numéro gabonais valide (8 ou 9 chiffres)."),
+const initialForm: RideForm = { firstName: "", phone: "", pickup: "", landmark: "", destination: "", dropoffNote: "", passengers: null, wantsAc: false, shared: false, payment: "CASH", price: 2000 };
+
+const formSchema = z.object({
+  firstName: z.string().trim().min(2, "Saisissez au moins 2 caractères.").max(40, "Le prénom est trop long."),
+  phone: z.string().trim().refine((v) => /^[0-9]{8,9}$/.test(v.replace(/[\s-]/g, "")), "Saisissez un numéro gabonais valide (8 ou 9 chiffres)."),
   pickup: z.string().trim().min(3, "Précisez votre point de départ.").max(120, "L’adresse est trop longue."),
+  landmark: z.string().trim().max(120, "Le repère est trop long."),
   destination: z.string().trim().min(3, "Précisez votre destination.").max(120, "L’adresse est trop longue."),
-  comfort: z.enum(["standard", "climatise"]),
-  payment: z.enum(["especes", "airtel", "moov"]),
-  price: z.number().int().min(500, "Le prix minimum est de 500 FCFA.").max(100000, "Le prix maximum est de 100 000 FCFA."),
+  dropoffNote: z.string().trim().max(160, "L’indication est trop longue."),
+  passengers: z.number({ invalid_type_error: "Indiquez le nombre de passagers.", required_error: "Indiquez le nombre de passagers." }).int().min(1, "Indiquez le nombre de passagers.").max(8, "8 passagers maximum."),
+  wantsAc: z.boolean(),
   shared: z.boolean(),
+  payment: z.enum(["CASH", "AIRTEL_MONEY", "MOOV_MONEY"]),
+  price: z.number().int().min(500, "Le prix minimum est de 500 FCFA.").max(100000, "Le prix maximum est de 100 000 FCFA."),
 });
 
-const initialRide: RideRequest = {
-  firstName: "",
-  phone: "",
-  pickup: "",
-  destination: "",
-  comfort: "standard",
-  payment: "especes",
-  price: 2000,
-  shared: false,
+type V1Status = "PENDING" | "CONTACT_PENDING" | "CONFIRMED" | "DRIVER_EN_ROUTE" | "DRIVER_ARRIVED" | "ONBOARD" | "COMPLETED" | "CANCELED_BY_CLIENT" | "CANCELED_BY_DRIVER" | "CONTACT_FAILED" | "EXPIRED" | "INCIDENT";
+
+type RideStatus = {
+  ride_id: string;
+  status: V1Status;
+  pickup_location: string;
+  pickup_landmark: string | null;
+  dropoff_location: string;
+  dropoff_note: string | null;
+  passenger_count: number;
+  wants_ac: boolean;
+  allow_sharing: boolean;
+  payment_method: Payment | null;
+  price_proposed: number;
+  price_final: number | null;
+  contact: { driver_first_name: string; whatsapp_status: "AVAILABLE" | "MISSING" | "INVALID"; whatsapp_url: string | null } | null;
+  safety: { driver_first_name: string; driver_photo_url: string | null; vehicle_photo_url: string | null; vehicle_make: string | null; vehicle_model: string | null; vehicle_color: string | null; vehicle_plate: string | null } | null;
 };
 
-const paymentLabels: Record<Payment, string> = {
-  especes: "Espèces",
-  airtel: "AirtelMoney",
-  moov: "MoovMoney",
+const statusLabels: Record<V1Status, string> = {
+  PENDING: "Recherche d’un chauffeur",
+  CONTACT_PENDING: "Mise en relation",
+  CONFIRMED: "Course confirmée",
+  DRIVER_EN_ROUTE: "Le chauffeur est en route",
+  DRIVER_ARRIVED: "Le chauffeur est arrivé",
+  ONBOARD: "Course en cours",
+  COMPLETED: "Course terminée",
+  CANCELED_BY_CLIENT: "Course annulée",
+  CANCELED_BY_DRIVER: "Le chauffeur a annulé",
+  CONTACT_FAILED: "Mise en relation terminée sans accord",
+  EXPIRED: "Demande expirée",
+  INCIDENT: "Incident signalé",
 };
+const TERMINAL: V1Status[] = ["COMPLETED", "CANCELED_BY_CLIENT", "CANCELED_BY_DRIVER", "CONTACT_FAILED", "EXPIRED", "INCIDENT"];
+const CLIENT_CANCELABLE: V1Status[] = ["PENDING", "CONTACT_PENDING", "CONFIRMED", "DRIVER_EN_ROUTE", "DRIVER_ARRIVED"];
 
-type MatchedDriver = { firstName: string; vehicle: string; plate: string; phone: string };
-type ActiveRide = { id: string; token: string; ride: RideRequest; driver: MatchedDriver | null };
-type Eta = { minutes: number; km: number | null; arrivalAt: number };
-
-function askNotificationPermission() {
-  if (typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission();
-}
-
-function notifyAccepted(name: string, minutes: number | null) {
-  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-  const body = minutes != null ? `${name} arrive dans ~${minutes} min.` : `${name} est en route vers vous.`;
-  try {
-    void navigator.serviceWorker?.getRegistration().then((reg) => {
-      if (reg) void reg.showNotification("Course acceptée — Allo Taxi..?", { body, icon: "/icon-192.png", tag: "ride-accepted" });
-      else new Notification("Course acceptée — Allo Taxi..?", { body, icon: "/icon-192.png" });
-    });
-  } catch { /* notifications indisponibles */ }
-}
-
-function Countdown({ arrivalAt }: { arrivalAt: number }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => { const t = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(t); }, []);
-  const left = Math.max(0, Math.round((arrivalAt - now) / 1000));
-  if (left === 0) return <strong className="text-xl font-bold text-live">Imminente</strong>;
-  const mm = String(Math.floor(left / 60)).padStart(2, "0");
-  const ss = String(left % 60).padStart(2, "0");
-  return <strong className="font-mono text-3xl font-bold tabular-nums text-live">{mm}:{ss}</strong>;
-}
-
-// Coordonnées approximatives de la destination (OpenStreetMap, limité au Gabon) pour le partage « même direction »
-async function geocodeDestination(query: string): Promise<{ lat: number; lng: number } | null> {
-  try {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ga&q=${encodeURIComponent(`${query}, Libreville`)}`, { signal: controller.signal, headers: { "Accept-Language": "fr" } });
-    window.clearTimeout(timer);
-    const [hit] = (await res.json()) as { lat: string; lon: string }[];
-    return hit ? { lat: Number(hit.lat), lng: Number(hit.lon) } : null;
-  } catch {
-    return null;
-  }
-}
-
-const ACTIVE_RIDE_KEY = "allo-taxi-active-ride-v2";
+/* Secret de suivi : sessionStorage (survit au rechargement de l’onglet, jamais affiché, jamais dans l’URL). */
+const V1_KEY = "allo-taxi-ride-v1";
+const LEGACY_KEY = "allo-taxi-active-ride-v2";
+type Session = { id: string; token: string };
+const POLL_MS = 5000;
 
 function getPosition(): Promise<{ lat: number; lng: number } | null> {
   return new Promise((resolve) => {
@@ -139,272 +128,163 @@ function getPosition(): Promise<{ lat: number; lng: number } | null> {
   });
 }
 
+function errorText(message: string | undefined, fallback: string) {
+  const m = message ?? "";
+  if (m.includes("ACTIVE_RIDE_EXISTS")) return "Une course est déjà en cours avec ce numéro. Terminez-la ou annulez-la avant d’en publier une nouvelle.";
+  if (m.includes("RATE_LIMITED")) return "Trop de demandes publiées avec ce numéro en une heure. Réessayez un peu plus tard.";
+  if (m.includes("CLIENT_RESTRICTED")) return "Ce numéro ne peut pas publier de demande pour le moment. Contactez Allo Taxi.";
+  if (m.includes("INVALID_DATA")) return "Certaines informations sont invalides. Vérifiez votre demande.";
+  if (m.includes("INVALID_PRICE")) return "Le prix convenu doit être compris entre 500 et 100 000 FCFA.";
+  if (m.includes("NOT_ALLOWED")) return "Cette action n’est plus possible : la course a changé d’état.";
+  return typeof navigator !== "undefined" && !navigator.onLine ? "Pas de réseau. Réessayez dès le retour de la connexion." : fallback;
+}
+
+/* ---------- Écran principal ---------- */
 function ClientJourney() {
-  const [step, setStep] = useState<Step>("request");
-  const [eta, setEta] = useState<Eta | null>(null);
-  const [onboard, setOnboard] = useState(false);
-  const [identityOpen, setIdentityOpen] = useState(true);
-  const [ride, setRide] = useState<RideRequest>(initialRide);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [lockedNotice, setLockedNotice] = useState(false);
-  const [relaunched, setRelaunched] = useState(false);
-  useEffect(() => { if (step !== "waiting") setRelaunched(false); }, [step]);
-  const [active, setActive] = useState<ActiveRide | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [legacy, setLegacy] = useState<Session | null>(null);
+  const [status, setStatus] = useState<RideStatus | null>(null);
+  const [lost, setLost] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const lastStatus = useRef<V1Status | null>(null);
 
-  const suggestedPrice = useMemo(() => {
-    const route = `${ride.pickup} ${ride.destination}`.toLocaleLowerCase("fr");
-    return route.includes("charbonnages") || route.includes("nzeng") ? 2000 : null;
-  }, [ride.destination, ride.pickup]);
-
-  // Reprise après rechargement ou coupure réseau
   useEffect(() => {
-    const stored = sessionStorage.getItem(ACTIVE_RIDE_KEY);
-    if (!stored) return;
     try {
-      const parsed = JSON.parse(stored) as ActiveRide;
-      setActive(parsed);
-      setRide(parsed.ride);
-      setStep(parsed.driver ? "matched" : "waiting");
+      const v1 = sessionStorage.getItem(V1_KEY);
+      if (v1) setSession(JSON.parse(v1) as Session);
+      const old = sessionStorage.getItem(LEGACY_KEY);
+      if (old) {
+        const parsed = JSON.parse(old) as Session;
+        if (parsed?.id && parsed?.token) setLegacy({ id: parsed.id, token: parsed.token });
+      }
     } catch {
-      sessionStorage.removeItem(ACTIVE_RIDE_KEY);
+      sessionStorage.removeItem(V1_KEY);
     }
+    setHydrated(true);
   }, []);
 
-  useEffect(() => {
-    if (active) sessionStorage.setItem(ACTIVE_RIDE_KEY, JSON.stringify(active));
-  }, [active]);
+  const poll = useCallback(async () => {
+    if (!session) return;
+    const { data, error } = await supabase.rpc("get_ride_status_v1", { _ride_id: session.id, _token: session.token });
+    if (error) return; // coupure réseau : on garde la session locale
+    if (!data) { setLost(true); return; }
+    const next = data as unknown as RideStatus;
+    const prev = lastStatus.current;
+    if (prev && prev !== next.status) {
+      if (next.status === "CONTACT_PENDING") chimes.accepted();
+      if (next.status === "COMPLETED") chimes.finished();
+    }
+    lastStatus.current = next.status;
+    setStatus(next);
+  }, [session]);
 
-  // Écoute temps réel du statut public de la course
-  const activeId = active?.id;
-  const activeToken = active?.token;
-  const listening = step === "waiting" || step === "matched";
   useEffect(() => {
-    if (!activeId || !listening) return;
-    let lastStatus: string | null = null;
-    const apply = (row: { status: string; chauffeur_first_name: string | null; vehicle_model: string | null; vehicle_plate: string | null; chauffeur_phone: string | null; eta_minutes?: number | null; driver_distance_km?: number | null } | null) => {
-      if (!row) return;
-      const changed = lastStatus !== null && lastStatus !== row.status;
-      const first = lastStatus === null;
-      lastStatus = row.status;
-      if (row.status === "onboard") {
-        setOnboard(true);
-        setLockedNotice(false);
-        const driver = { firstName: row.chauffeur_first_name ?? "", vehicle: row.vehicle_model ?? "", plate: row.vehicle_plate ?? "", phone: row.chauffeur_phone ?? "" };
-        setActive((current) => current ? { ...current, driver } : current);
-        setStep("matched");
-      } else if (row.status === "negotiating" && row.chauffeur_first_name) {
-        setOnboard(false);
-        if (changed || (first && step === "waiting")) {
-          chimes.accepted();
-          notifyAccepted(row.chauffeur_first_name, row.eta_minutes ?? null);
-        }
-        const driver = { firstName: row.chauffeur_first_name, vehicle: row.vehicle_model ?? "", plate: row.vehicle_plate ?? "", phone: row.chauffeur_phone ?? "" };
-        setActive((current) => current ? { ...current, driver } : current);
-        const updatedAt = (row as { updated_at?: string }).updated_at;
-        const base = updatedAt ? Math.min(Date.parse(updatedAt), Date.now()) : Date.now();
-        setEta(row.eta_minutes != null ? { minutes: row.eta_minutes, km: row.driver_distance_km ?? null, arrivalAt: base + row.eta_minutes * 60000 } : null);
-        setStep("matched");
-      } else if (row.status === "pending") {
-        // Discussion échouée côté chauffeur : la course est relancée dans le pool
-        setActive((current) => {
-          if (current?.driver) setRelaunched(true);
-          return current ? { ...current, driver: null } : current;
-        });
-        setEta(null);
-        setLockedNotice(false);
-        setStep("waiting");
-      } else if (row.status === "completed") {
-        if (changed || first) chimes.finished();
-        setOnboard(false);
-        resetAll();
-        setSubmitError("Course terminée. Merci d'avoir voyagé avec Allo Taxi !");
-      } else if (row.status === "canceled") {
-        resetAll();
-        setSubmitError("Votre demande a expiré. Vous pouvez la republier.");
-      }
-    };
-    // Suivi sécurisé : uniquement la course dont on détient le jeton (polling 5 s, pas de Realtime public)
-    const poll = () => supabase.rpc("get_ride_status", { _ride_id: activeId, _token: activeToken ?? "" }).then(({ data, error }) => {
-      if (error) return; // erreur réseau : on conserve la course localement
-      apply(data?.[0] ?? null);
-    });
+    if (!session) return;
     void poll();
-    const timer = window.setInterval(poll, 5000);
-    return () => { window.clearInterval(timer); };
-  }, [activeId, activeToken, listening]);
+    const t = window.setInterval(() => void poll(), POLL_MS);
+    return () => window.clearInterval(t);
+  }, [poll, session]);
 
-  useEffect(() => {
-    if (step !== "matched") return;
-    window.history.pushState({ alloTaxiLocked: true }, "", window.location.href);
-    const holdDiscussion = () => {
-      window.history.pushState({ alloTaxiLocked: true }, "", window.location.href);
-      setLockedNotice(true);
-    };
-    window.addEventListener("popstate", holdDiscussion);
-    return () => window.removeEventListener("popstate", holdDiscussion);
-  }, [step]);
-
-  function update<K extends keyof RideRequest>(key: K, value: RideRequest[K]) {
-    setRide((current) => ({ ...current, [key]: value }));
-    setErrors((current) => ({ ...current, [key]: "" }));
+  function startSession(s: Session) {
+    sessionStorage.setItem(V1_KEY, JSON.stringify(s));
+    lastStatus.current = "PENDING";
+    setSession(s);
+  }
+  function clearSession() {
+    sessionStorage.removeItem(V1_KEY);
+    lastStatus.current = null;
+    setSession(null);
+    setStatus(null);
+    setLost(false);
+  }
+  function clearLegacy() {
+    sessionStorage.removeItem(LEGACY_KEY);
+    setLegacy(null);
   }
 
-  async function submitRequest(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const parsed = requestSchema.safeParse(ride);
-    if (!parsed.success) {
-      const nextErrors: Record<string, string> = {};
-      for (const issue of parsed.error.issues) nextErrors[String(issue.path[0])] = issue.message;
-      setErrors(nextErrors);
-      setIdentityOpen(Boolean(nextErrors["firstName"] || nextErrors["phone"]));
-      return;
-    }
-    setErrors({});
-    setSubmitError(null);
-    if (active) { setStep(active.driver ? "matched" : "waiting"); return; }
-    askNotificationPermission();
-    setSubmitting(true);
-    const [position, dropoff] = await Promise.all([getPosition(), parsed.data.shared ? geocodeDestination(parsed.data.destination) : Promise.resolve(null)]);
-    const { data: created, error } = await supabase.rpc("create_ride_public", {
-      _client_name: parsed.data.firstName,
-      _client_phone: `+241${parsed.data.phone.replace(/\D/g, "")}`,
-      _pickup_location: parsed.data.pickup,
-      _dropoff_location: parsed.data.destination,
-      _price: parsed.data.price,
-      _payment_method: paymentLabels[parsed.data.payment],
-      _wants_ac: parsed.data.comfort === "climatise",
-      _allow_sharing: parsed.data.shared,
-      // Coordonnées absentes = GPS réellement indisponible (NULL côté serveur)
-      ...(position ? { _pickup_lat: position.lat, _pickup_lng: position.lng } : {}),
-      ...(dropoff ? { _dropoff_lat: dropoff.lat, _dropoff_lng: dropoff.lng } : {}),
-    });
-    setSubmitting(false);
-    const row = created?.[0];
-    if (error || !row) {
-      const msg = error?.message ?? "";
-      setSubmitError(msg.includes("ACTIVE_RIDE_EXISTS")
-        ? "Une course est déjà en cours avec ce numéro. Annulez-la avant d’en publier une nouvelle."
-        : msg.includes("RATE_LIMITED")
-          ? "Trop de demandes publiées avec ce numéro en une heure. Réessayez un peu plus tard."
-          : msg.includes("INVALID_DATA")
-            ? "Certaines informations sont invalides. Vérifiez votre demande."
-            : navigator.onLine ? "La demande n’a pas pu être publiée. Vérifiez vos informations." : "Pas de réseau. Réessayez dès le retour de la connexion.");
-      return;
-    }
-    setRide(parsed.data);
-    setActive({ id: row.id, token: row.token, ride: parsed.data, driver: null });
-    setStep("waiting");
-  }
-
-  function resetAll() {
-    sessionStorage.removeItem(ACTIVE_RIDE_KEY);
-    setActive(null);
-    setRide(initialRide);
-    setErrors({});
-    setIdentityOpen(true);
-    setStep("request");
-  }
-
-  async function cancelRequest() {
-    if (active) {
-      const { error } = await supabase.rpc("cancel_ride_public", { _ride_id: active.id, _token: active.token });
-      if (error) {
-        // Erreur réseau : on ne perd jamais la course localement
-        setSubmitError("Annulation impossible pour le moment (réseau). Réessayez.");
-        return;
-      }
-    }
-    resetAll();
-  }
-
-  const driver = active?.driver ?? null;
-  const whatsappMessage = encodeURIComponent(
-    `Bonjour ${driver?.firstName ?? ""}, je suis ${ride.firstName}. Vous avez accepté ma course Allo Taxi..?\n\nDépart : ${ride.pickup}\nDestination : ${ride.destination}\nPrix proposé : ${ride.price.toLocaleString("fr-FR")} FCFA\nConfort : ${ride.comfort === "climatise" ? "Véhicule climatisé exigé" : "Standard avec ventilation"}\nRèglement : ${paymentLabels[ride.payment]}\n\nJe suis prêt(e) pour l’embarquement.`,
-  );
+  let body: React.ReactNode;
+  if (!hydrated) body = null;
+  else if (legacy && !session) body = <LegacyTracker session={legacy} onDone={clearLegacy} />;
+  else if (!session) body = <RequestScreen onCreated={startSession} />;
+  else if (lost) body = <Terminal title="Course introuvable" text="Cette course n’est plus accessible depuis cet appareil." onNew={clearSession} />;
+  else if (!status) body = <p className="glass-panel p-8 text-center text-sm text-muted-foreground">Chargement de votre course…</p>;
+  else body = <RideScreen session={session} status={status} onRefresh={poll} onNew={clearSession} />;
 
   return (
     <main className="relative min-h-svh overflow-hidden bg-background px-4 py-5 text-foreground sm:px-6 sm:py-8">
       <div className="taxi-grid pointer-events-none absolute inset-0" />
       <div className="relative mx-auto w-full max-w-3xl">
         <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
-          {step === "matched" ? (
-            <Button type="button" variant="ghost" size="icon" aria-label="Revenir" onClick={() => setLockedNotice(true)} className="border border-border bg-secondary">
-              <ArrowLeft />
-            </Button>
-          ) : (
-            <Button asChild variant="ghost" size="icon" className="border border-border bg-secondary">
-              <Link to="/" aria-label="Retour à l’accueil"><ArrowLeft /></Link>
-            </Button>
-          )}
+          <Button asChild variant="ghost" size="icon" className="border border-border bg-secondary">
+            <Link to="/" aria-label="Retour à l’accueil"><ArrowLeft /></Link>
+          </Button>
           <div className="min-w-0 text-center">
             <p className="truncate text-sm font-semibold">Allo Taxi<span className="text-primary">..?</span></p>
             <p className="text-[10px] uppercase text-muted-foreground">Course express</p>
           </div>
           <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase text-live"><span className="size-2 rounded-full bg-live" />Libreville</span>
         </header>
-
-        <StepRail step={step} />
-
-        <div key={step} className="animate-journey-in">
-          {step === "request" && (
-            <RequestScreen
-              ride={ride}
-              errors={errors}
-              identityOpen={identityOpen}
-              suggestedPrice={suggestedPrice}
-              submitting={submitting}
-              submitError={submitError}
-              onIdentityToggle={() => setIdentityOpen((value) => !value)}
-              onUpdate={update}
-              onSubmit={submitRequest}
-            />
-          )}
-          {step === "waiting" && (
-            <>
-              {relaunched && (
-                <div className="mb-4 rounded-md border border-primary/30 bg-primary/10 p-4 text-center text-sm" role="status">
-                  Le chauffeur n’a pas pu finaliser la course. <strong>Votre demande est relancée</strong> auprès des autres taximen.
-                </div>
-              )}
-              <WaitingScreen ride={ride} onCancel={cancelRequest} />
-            </>
-          )}
-          {step === "matched" && driver && (
-            <MatchedScreen ride={ride} driver={driver} eta={onboard ? null : eta} onboard={onboard} whatsappMessage={whatsappMessage} lockedNotice={lockedNotice} onDismissLock={() => setLockedNotice(false)} onCancel={cancelRequest} />
-          )}
-        </div>
+        <div className="mt-7 animate-journey-in">{body}</div>
       </div>
     </main>
   );
 }
 
-function StepRail({ step }: { step: Step }) {
-  const current = step === "request" ? 1 : step === "waiting" ? 2 : 3;
-  return (
-    <div className="mx-auto my-7 flex max-w-xs items-center" aria-label={`Étape ${current} sur 3`}>
-      {[1, 2, 3].map((number, index) => (
-        <div key={number} className={cn("flex items-center", index < 2 && "flex-1")}>
-          <span className={cn("grid size-7 shrink-0 place-items-center rounded-full border text-[11px] font-bold", number <= current ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary text-muted-foreground")}>{number < current ? "✓" : number}</span>
-          {index < 2 && <span className={cn("h-px flex-1", number < current ? "bg-primary" : "bg-border")} />}
-        </div>
-      ))}
-    </div>
-  );
-}
+/* ---------- Formulaire V1 ---------- */
+function RequestScreen({ onCreated }: { onCreated: (s: Session) => void }) {
+  const [form, setForm] = useState<RideForm>(initialForm);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsState, setGpsState] = useState<"idle" | "loading" | "ok" | "unavailable">("idle");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-function RequestScreen({ ride, errors, identityOpen, suggestedPrice, submitting, submitError, onIdentityToggle, onUpdate, onSubmit }: {
-  ride: RideRequest;
-  errors: Record<string, string>;
-  identityOpen: boolean;
-  suggestedPrice: number | null;
-  submitting: boolean;
-  submitError: string | null;
-  onIdentityToggle: () => void;
-  onUpdate: <K extends keyof RideRequest>(key: K, value: RideRequest[K]) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-}) {
+  function update<K extends keyof RideForm>(key: K, value: RideForm[K]) {
+    setForm((c) => ({ ...c, [key]: value }));
+    setErrors((c) => ({ ...c, [key]: "" }));
+  }
+
+  async function locate() {
+    setGpsState("loading");
+    const pos = await getPosition();
+    setGps(pos);
+    setGpsState(pos ? "ok" : "unavailable");
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const parsed = formSchema.safeParse(form);
+    if (!parsed.success) {
+      const next: Record<string, string> = {};
+      for (const issue of parsed.error.issues) next[String(issue.path[0])] = issue.message;
+      setErrors(next);
+      return;
+    }
+    setErrors({});
+    setSubmitError(null);
+    setSubmitting(true);
+    const d = parsed.data;
+    const { data, error } = await supabase.rpc("create_ride_public_v1", {
+      _client_name: d.firstName,
+      _client_phone: `+241${d.phone.replace(/\D/g, "")}`,
+      _pickup_location: d.pickup,
+      _pickup_landmark: d.landmark,
+      _pickup_lat: (gps?.lat ?? null) as unknown as number,
+      _pickup_lng: (gps?.lng ?? null) as unknown as number,
+      _dropoff_location: d.destination,
+      _dropoff_note: d.dropoffNote,
+      _passenger_count: d.passengers,
+      _wants_ac: d.wantsAc,
+      _allow_sharing: d.shared,
+      _payment_method: d.payment,
+      _price: d.price,
+    });
+    setSubmitting(false);
+    const row = data?.[0];
+    if (error || !row) return setSubmitError(errorText(error?.message, "La demande n’a pas pu être publiée. Vérifiez vos informations."));
+    onCreated({ id: row.ride_id, token: row.token });
+  }
+
   return (
     <section>
       <div className="mb-7 text-center">
@@ -412,60 +292,77 @@ function RequestScreen({ ride, errors, identityOpen, suggestedPrice, submitting,
         <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">Où allons-nous ?</h1>
         <p className="mt-2 text-sm text-muted-foreground">Publiez votre trajet en moins d’une minute.</p>
       </div>
-
-      <form onSubmit={onSubmit} className="space-y-5" noValidate>
-        <section className="glass-panel overflow-hidden">
-          <Button type="button" variant="ghost" onClick={onIdentityToggle} aria-expanded={identityOpen} className="h-auto w-full justify-between rounded-none px-5 py-4 hover:bg-accent/40">
-            <span className="flex min-w-0 items-center gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><UserRound /></span><span className="min-w-0 text-left"><span className="block text-sm font-semibold">Votre identité éphémère</span><span className="block truncate text-[11px] font-normal text-muted-foreground">Utilisée uniquement pour cette course</span></span></span>
-            {identityOpen ? <ChevronUp /> : <ChevronDown />}
-          </Button>
-          {identityOpen && (
-            <div className="grid gap-4 border-t border-border px-5 py-5 sm:grid-cols-2">
-              <Field label="Prénom" error={errors["firstName"]}><Input value={ride.firstName} onChange={(event) => onUpdate("firstName", event.target.value)} maxLength={50} placeholder="Votre prénom" autoComplete="given-name" className="h-12" /></Field>
-              <Field label="Numéro de téléphone" error={errors["phone"]}>
-                <div className="grid grid-cols-[auto_minmax(0,1fr)]"><span className="flex h-12 items-center rounded-l-md border border-r-0 border-input bg-secondary px-3 text-sm font-semibold">+241</span><Input value={ride.phone} onChange={(event) => onUpdate("phone", event.target.value)} maxLength={14} type="tel" inputMode="tel" placeholder="06 00 00 00" autoComplete="tel" className="h-12 rounded-l-none" /></div>
-              </Field>
-            </div>
-          )}
+      <form onSubmit={submit} className="space-y-5" noValidate>
+        <section className="glass-panel grid gap-4 p-5 sm:grid-cols-2">
+          <p className="flex items-center gap-2 text-sm font-semibold sm:col-span-2"><UserRound className="size-4 text-primary" />Vous</p>
+          <Field label="Prénom" error={errors["firstName"]}><Input value={form.firstName} onChange={(e) => update("firstName", e.target.value)} maxLength={40} placeholder="Votre prénom" autoComplete="given-name" className="h-12" /></Field>
+          <Field label="Numéro de téléphone" error={errors["phone"]}>
+            <div className="grid grid-cols-[auto_minmax(0,1fr)]"><span className="flex h-12 items-center rounded-l-md border border-r-0 border-input bg-secondary px-3 text-sm font-semibold">+241</span><Input value={form.phone} onChange={(e) => update("phone", e.target.value)} maxLength={14} type="tel" inputMode="tel" placeholder="06 00 00 00" autoComplete="tel" className="h-12 rounded-l-none" /></div>
+          </Field>
         </section>
 
         <section className="glass-panel space-y-4 p-5">
-          <Field label="📍 Où êtes-vous ?" error={errors["pickup"]}><Input value={ride.pickup} onChange={(event) => onUpdate("pickup", event.target.value)} maxLength={120} placeholder="Ex: Charbonnages, Entrée SNI" className="h-12" /></Field>
+          <Field label="📍 Point de départ" error={errors["pickup"]}><Input value={form.pickup} onChange={(e) => update("pickup", e.target.value)} maxLength={120} placeholder="Ex : Charbonnages, entrée SNI" className="h-12" /></Field>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" variant="outline" size="sm" onClick={() => void locate()} disabled={gpsState === "loading"}><Crosshair />{gpsState === "loading" ? "Localisation…" : "Ajouter ma position GPS"}</Button>
+            <span className={cn("text-xs", gpsState === "ok" ? "text-live" : "text-muted-foreground")}>
+              {gpsState === "ok" ? "Position GPS ajoutée" : gpsState === "unavailable" ? "Position indisponible — votre adresse suffit" : "Facultatif, aide les chauffeurs proches"}
+            </span>
+          </div>
+          <Field label="Repère (facultatif)" error={errors["landmark"]}><Input value={form.landmark} onChange={(e) => update("landmark", e.target.value)} maxLength={120} placeholder="Ex : devant la pharmacie" className="h-12" /></Field>
           <div className="ml-5 h-5 border-l border-dashed border-primary/50" />
-          <Field label="🏁 Où allez-vous ?" error={errors["destination"]}><Input value={ride.destination} onChange={(event) => onUpdate("destination", event.target.value)} maxLength={120} placeholder="Ex: Nzeng-Ayong, Rond-point" className="h-12" /></Field>
+          <Field label="🏁 Destination" error={errors["destination"]}><Input value={form.destination} onChange={(e) => update("destination", e.target.value)} maxLength={120} placeholder="Ex : Nzeng-Ayong, rond-point" className="h-12" /></Field>
+          <Field label="Indication complémentaire (facultatif)" error={errors["dropoffNote"]}><Input value={form.dropoffNote} onChange={(e) => update("dropoffNote", e.target.value)} maxLength={160} placeholder="Ex : portail bleu après l’école" className="h-12" /></Field>
         </section>
 
         <section className="glass-panel p-5">
-          <p className="text-sm font-semibold">Votre confort</p>
+          <p className="flex items-center gap-2 text-sm font-semibold"><Users className="size-4 text-primary" />Nombre de passagers</p>
+          <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-8" role="radiogroup" aria-label="Nombre de passagers">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+              <Button key={n} type="button" role="radio" aria-checked={form.passengers === n} variant="outline" onClick={() => update("passengers", n)} className={cn("h-11", form.passengers === n && "border-primary bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary")}>{n}</Button>
+            ))}
+          </div>
+          {errors["passengers"] && <p className="mt-2 text-xs text-destructive" role="alert">{errors["passengers"]}</p>}
+        </section>
+
+        <section className="glass-panel p-5">
+          <p className="text-sm font-semibold">Climatisation souhaitée</p>
           <div className="mt-3 grid grid-cols-2 gap-3">
-            <ChoiceButton active={ride.comfort === "standard"} onClick={() => onUpdate("comfort", "standard")} icon={<Wind />} title="Standard" subtitle="Ventilation" />
-            <ChoiceButton active={ride.comfort === "climatise"} onClick={() => onUpdate("comfort", "climatise")} icon={<Snowflake />} title="Climatisé" subtitle="Air conditionné" />
+            <ChoiceButton active={!form.wantsAc} onClick={() => update("wantsAc", false)} icon={<Wind />} title="Non" subtitle="Standard, ventilation" />
+            <ChoiceButton active={form.wantsAc} onClick={() => update("wantsAc", true)} icon={<Snowflake />} title="Oui" subtitle="Véhicule climatisé" />
           </div>
         </section>
 
-        <SharedRideOption checked={ride.shared} onChange={(v) => onUpdate("shared", v)} />
+        <label className="glass-panel flex cursor-pointer items-start gap-3 p-5">
+          <input type="checkbox" checked={form.shared} onChange={(e) => update("shared", e.target.checked)} className="mt-1 size-5 shrink-0 accent-[var(--color-primary)]" />
+          <span>
+            <span className="block text-sm font-semibold">J’accepte un trajet partagé</span>
+            <span className="mt-1 block text-xs leading-5 text-muted-foreground">Votre préférence est transmise au chauffeur. Le partage de trajet n’est pas encore proposé : votre course reste individuelle.</span>
+          </span>
+        </label>
 
         <section className="glass-panel p-5">
-          <p className="text-sm font-semibold">Mode de règlement</p>
+          <p className="text-sm font-semibold">Mode de paiement</p>
           <div className="mt-3 grid grid-cols-3 gap-2">
-            {(["especes", "airtel", "moov"] as const).map((payment) => (
-              <Button key={payment} type="button" variant="outline" aria-pressed={ride.payment === payment} onClick={() => onUpdate("payment", payment)} className={cn("h-11 min-w-0 px-2 text-[11px]", ride.payment === payment && "border-primary bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary")}>
-                <span aria-hidden="true">{payment === "especes" ? "💵" : "📲"}</span><span className="truncate">{paymentLabels[payment]}</span>
+            {(Object.keys(paymentLabels) as Payment[]).map((p) => (
+              <Button key={p} type="button" variant="outline" aria-pressed={form.payment === p} onClick={() => update("payment", p)} className={cn("h-11 min-w-0 px-2 text-[11px]", form.payment === p && "border-primary bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary")}>
+                <span className="truncate">{paymentLabels[p]}</span>
               </Button>
             ))}
           </div>
+          <p className="mt-3 text-xs text-muted-foreground">Vous réglez la course directement au chauffeur. Allo Taxi n’encaisse pas le prix de la course.</p>
         </section>
 
         <section className="glass-panel p-5">
           <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
             <div>
-              <p className="flex items-center gap-2 text-sm font-semibold"><CircleDollarSign className="size-4 text-primary" />Votre offre</p>
-              <p className="mt-1 min-h-5 text-xs text-muted-foreground">{suggestedPrice ? `Prix suggéré : ${suggestedPrice.toLocaleString("fr-FR")} FCFA` : "Indiquez le tarif que vous proposez."}</p>
+              <p className="flex items-center gap-2 text-sm font-semibold"><CircleDollarSign className="size-4 text-primary" />Votre prix proposé</p>
+              <p className="mt-1 text-xs text-muted-foreground">C’est une proposition : le chauffeur peut l’accepter ou en discuter avec vous.</p>
             </div>
             <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2">
-              <Button type="button" variant="outline" size="icon" aria-label="Réduire le prix de 100 FCFA" onClick={() => onUpdate("price", Math.max(500, ride.price - 100))}><Minus /></Button>
-              <div className="relative"><Input aria-label="Prix proposé en FCFA" value={ride.price} onChange={(event) => onUpdate("price", Number(event.target.value))} type="number" min={500} max={100000} step={100} className="h-11 min-w-0 pr-14 text-center font-bold tabular-nums" /><span className="pointer-events-none absolute right-2 top-3 text-[10px] font-semibold text-muted-foreground">FCFA</span></div>
-              <Button type="button" variant="outline" size="icon" aria-label="Augmenter le prix de 100 FCFA" onClick={() => onUpdate("price", Math.min(100000, ride.price + 100))}><Plus /></Button>
+              <Button type="button" variant="outline" size="icon" aria-label="Réduire de 100 FCFA" onClick={() => update("price", Math.max(500, form.price - 100))}><Minus /></Button>
+              <div className="relative"><Input aria-label="Prix proposé en FCFA" value={form.price} onChange={(e) => update("price", Number(e.target.value))} type="number" min={500} max={100000} step={100} className="h-11 min-w-0 pr-14 text-center font-bold tabular-nums" /><span className="pointer-events-none absolute right-2 top-3 text-[10px] font-semibold text-muted-foreground">FCFA</span></div>
+              <Button type="button" variant="outline" size="icon" aria-label="Augmenter de 100 FCFA" onClick={() => update("price", Math.min(100000, form.price + 100))}><Plus /></Button>
             </div>
           </div>
           {errors["price"] && <p className="mt-2 text-xs text-destructive">{errors["price"]}</p>}
@@ -473,123 +370,253 @@ function RequestScreen({ ride, errors, identityOpen, suggestedPrice, submitting,
 
         {submitError && <p className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive" role="alert">{submitError}</p>}
         <Button type="submit" disabled={submitting} className="h-14 w-full text-base font-semibold shadow-gold">{submitting ? "Publication en cours…" : "Diffuser ma demande"} <Navigation /></Button>
-        <p className="text-center text-[10px] text-muted-foreground">Votre position est demandée pour prévenir les chauffeurs les plus proches.</p>
       </form>
     </section>
   );
 }
 
-function WaitingScreen({ ride, onCancel }: { ride: RideRequest; onCancel: () => void }) {
-  return (
-    <section className="glass-panel p-5 text-center sm:p-8">
-      <div className="mx-auto grid size-52 place-items-center" aria-label="Recherche de chauffeurs en cours">
-        <div className="radar relative grid size-40 place-items-center rounded-full border border-live/30">
-          <span className="absolute size-28 rounded-full border border-live/20" />
-          <span className="absolute size-16 rounded-full border border-live/30" />
-          <span className="absolute left-8 top-10 size-2 rounded-full bg-primary shadow-gold" />
-          <span className="absolute bottom-9 right-11 size-2 rounded-full bg-live" />
-          <CarFront className="relative z-10 size-7 text-live" />
-        </div>
-      </div>
-      <p className="text-xs font-semibold uppercase text-live">Demande publiée</p>
-      <h1 className="mx-auto mt-3 max-w-md text-2xl font-semibold sm:text-3xl">Les taximen à proximité étudient votre offre.</h1>
-      <p className="mt-3 text-sm text-muted-foreground">Gardez cet écran ouvert : il bascule automatiquement dès qu’un chauffeur accepte.</p>
-
-      <RideSummary ride={ride} />
-
-      <div className="mt-6">
-        <Button type="button" variant="outline" onClick={onCancel} className="h-12 w-full sm:w-auto sm:px-8"><X />Annuler ma demande</Button>
-      </div>
-    </section>
-  );
-}
-
-function MatchedScreen({ ride, driver, eta, onboard, whatsappMessage, lockedNotice, onDismissLock, onCancel }: { ride: RideRequest; driver: MatchedDriver; eta: Eta | null; onboard: boolean; whatsappMessage: string; lockedNotice: boolean; onDismissLock: () => void; onCancel: () => void }) {
+/* ---------- Suivi de course V1 ---------- */
+function RideScreen({ session, status, onRefresh, onNew }: { session: Session; status: RideStatus; onRefresh: () => Promise<void>; onNew: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
-  const waNumber = driver.phone.replace(/\D/g, "");
+  const s = status.status;
+
+  async function run(fn: () => PromiseLike<{ error: { message: string } | null }>, fallback: string) {
+    setBusy(true);
+    setError(null);
+    const { error: err } = await fn();
+    setBusy(false);
+    if (err) setError(errorText(err.message, fallback));
+    await onRefresh();
+  }
+  const cancel = () => run(() => supabase.rpc("cancel_ride_v1", { _ride_id: session.id, _token: session.token }), "Annulation impossible pour le moment.");
+
+  if (TERMINAL.includes(s)) {
+    const texts: Partial<Record<V1Status, string>> = {
+      COMPLETED: "Merci d’avoir voyagé avec Allo Taxi.",
+      CANCELED_BY_CLIENT: "Votre demande a été annulée.",
+      CANCELED_BY_DRIVER: "Le chauffeur a dû annuler la course. Vous pouvez publier une nouvelle demande.",
+      CONTACT_FAILED: "Aucun accord n’a été trouvé avec le chauffeur.",
+      EXPIRED: "Aucun chauffeur n’a pris votre demande à temps. Vous pouvez la republier.",
+      INCIDENT: "Un incident a été signalé sur cette course. Allo Taxi pourra vous recontacter.",
+    };
+    return <Terminal title={statusLabels[s]} text={texts[s] ?? ""} onNew={onNew} positive={s === "COMPLETED"} />;
+  }
+
   return (
-    <section className="glass-panel overflow-hidden">
-      {lockedNotice && (
-        <div className="border-b border-live/25 bg-live/10 px-5 py-4 text-center text-sm font-semibold text-live" role="status">Discussion en cours avec le chauffeur...</div>
-      )}
-      <div className="p-5 sm:p-8">
-        <div className="text-center">
-          <div className="mx-auto grid size-14 place-items-center rounded-full bg-live/15 text-live"><BadgeCheck className="size-7" /></div>
-          <p className="mt-4 text-xs font-semibold uppercase text-live">{onboard ? "À bord" : "Chauffeur trouvé"}</p>
-          <h1 className="mt-2 text-3xl font-semibold">{onboard ? `En route vers ${ride.destination}.` : "Votre course est acceptée."}</h1>
-          {onboard && ride.shared && <p className="mt-2 text-xs text-muted-foreground">Partage accepté : d’autres passagers allant dans votre direction peuvent monter.</p>}
-        </div>
-
-        <article className="mt-7 grid grid-cols-[88px_minmax(0,1fr)] gap-4 rounded-md border border-border bg-secondary/70 p-4">
-          <div role="img" aria-label={`Avatar de ${driver.firstName}, chauffeur certifié`} className="grid aspect-square size-[88px] place-items-center rounded-md bg-primary/15 text-3xl font-black text-primary">{driver.firstName.slice(0, 1).toUpperCase()}</div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2"><h2 className="truncate text-xl font-semibold">{driver.firstName}</h2><BadgeCheck className="size-4 shrink-0 text-live" aria-label="Profil certifié" /></div>
-            <p className="mt-1 text-xs text-muted-foreground">{driver.vehicle}</p>
-            <p className="mt-3 text-[10px] font-semibold uppercase text-muted-foreground">Plaque validée</p>
-            <p className="mt-1 text-xl font-bold tracking-normal text-foreground">{driver.plate}</p>
-          </div>
-        </article>
-
-        <div className="mt-4 flex items-center gap-4 rounded-md border border-live/30 bg-live/10 p-4" role="status" aria-live="polite">
-          <span className="relative flex size-3 shrink-0"><span className="absolute inline-flex size-full animate-ping rounded-full bg-live opacity-60 motion-reduce:animate-none" /><span className="relative inline-flex size-3 rounded-full bg-live" /></span>
-          {onboard ? (
-            <p className="text-sm">Bon trajet ! Vous serez notifié à l’arrivée à destination.</p>
-          ) : eta ? (
-            <div className="text-sm leading-6"><p className="text-xs uppercase text-muted-foreground">Votre chauffeur arrive dans</p><Countdown arrivalAt={eta.arrivalAt} />{eta.km != null && <span className="ml-2 text-muted-foreground">· {eta.km < 1 ? `${Math.round(eta.km * 1000)} m` : `${eta.km.toFixed(1)} km`}</span>}</div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Calcul du temps d’arrivée… (position GPS du chauffeur ou la vôtre indisponible)</p>
-          )}
-        </div>
-
-        <RideSummary ride={ride} />
-
-        <div className="mt-6 flex items-start gap-3 rounded-md border border-primary/20 bg-primary/5 p-4">
-          <Phone className="mt-0.5 size-5 shrink-0 text-primary" />
-          <p className="text-sm leading-6"><strong>Le chauffeur a accepté votre tarif.</strong> Ouvrez WhatsApp pour finaliser l’embarquement.</p>
-        </div>
-
-        <Button asChild className="mt-5 h-14 w-full bg-live text-base font-semibold text-foreground shadow-live hover:bg-live/90">
-          <a href={`https://wa.me/${waNumber}?text=${whatsappMessage}`} target="_blank" rel="noreferrer">Ouvrir la discussion privée WhatsApp <ArrowLeft className="rotate-180" /></a>
-        </Button>
-        {lockedNotice && <Button type="button" variant="ghost" onClick={onDismissLock} className="mt-2 w-full text-xs text-muted-foreground">Rester sur cette course</Button>}
-        {onboard ? null : confirmCancel ? (
-          <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-center">
-            <p className="text-xs">Le chauffeur est en route. Annuler vraiment la course ?</p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <Button type="button" variant="ghost" onClick={() => setConfirmCancel(false)} className="text-xs">Non, garder</Button>
-              <Button type="button" variant="destructive" onClick={onCancel} className="text-xs">Oui, annuler</Button>
+    <section className="space-y-5">
+      <div className="glass-panel p-5 text-center sm:p-8">
+        <StatusRail status={s} />
+        <p className="mt-6 text-xs font-semibold uppercase text-live">{statusLabels[s]}</p>
+        {s === "PENDING" && (
+          <>
+            <div className="mx-auto my-5 grid size-40 place-items-center">
+              <div className="radar relative grid size-32 place-items-center rounded-full border border-live/30"><CarFront className="relative z-10 size-7 text-live" /></div>
             </div>
-          </div>
-        ) : (
-          <Button type="button" variant="ghost" onClick={() => setConfirmCancel(true)} className="mt-2 w-full text-xs text-muted-foreground">Annuler la course en cours</Button>
+            <h1 className="text-2xl font-semibold">Les chauffeurs à proximité étudient votre demande.</h1>
+            <p className="mt-2 text-sm text-muted-foreground">Gardez cet écran ouvert : il change dès qu’un chauffeur se propose.</p>
+          </>
         )}
-        <p className="mt-2 text-center text-[10px] text-muted-foreground">Une nouvelle demande sera possible une fois cette course terminée ou annulée.</p>
-        <p className="mt-4 flex items-center justify-center gap-2 text-[10px] text-muted-foreground"><ShieldCheck className="size-3.5 text-live" />Votre numéro reste privé jusqu’à l’ouverture de WhatsApp.</p>
+        {s === "CONTACT_PENDING" && status.contact && <ContactStep session={session} status={status} busy={busy} onRun={run} />}
+        {s !== "PENDING" && s !== "CONTACT_PENDING" && (
+          <h1 className="mt-2 text-2xl font-semibold">
+            {s === "CONFIRMED" ? "Votre chauffeur va partir vers vous." : s === "DRIVER_EN_ROUTE" ? "Votre chauffeur arrive." : s === "DRIVER_ARRIVED" ? "Votre chauffeur vous attend au point de départ." : `En route vers ${status.dropoff_location}.`}
+          </h1>
+        )}
       </div>
+
+      {status.safety && <SafetyCard safety={status.safety} />}
+      <RideSummary status={status} />
+
+      {error && <p className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive" role="alert">{error}</p>}
+
+      {CLIENT_CANCELABLE.includes(s) && (confirmCancel ? (
+        <div className="glass-panel p-4 text-center">
+          <p className="text-sm">Annuler vraiment votre demande ?</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Button type="button" variant="ghost" onClick={() => setConfirmCancel(false)}>Non, garder</Button>
+            <Button type="button" variant="destructive" disabled={busy} onClick={() => void cancel()}>Oui, annuler</Button>
+          </div>
+        </div>
+      ) : (
+        <Button type="button" variant="outline" onClick={() => setConfirmCancel(true)} className="h-12 w-full"><X />Annuler ma demande</Button>
+      ))}
+      <p className="flex items-center justify-center gap-2 text-[10px] text-muted-foreground"><ShieldCheck className="size-3.5 text-live" />Votre numéro n’est jamais montré au chauffeur par Allo Taxi.</p>
     </section>
   );
 }
 
-function RideSummary({ ride }: { ride: RideRequest }) {
+function ContactStep({ session, status, busy, onRun }: { session: Session; status: RideStatus; busy: boolean; onRun: (fn: () => PromiseLike<{ error: { message: string } | null }>, fallback: string) => Promise<void> }) {
+  const [mode, setMode] = useState<"choose" | "agree" | "disagree">("choose");
+  const [finalPrice, setFinalPrice] = useState<number>(status.price_proposed);
+  const contact = status.contact!;
   return (
-    <div className="mt-7 rounded-md border border-border bg-background/35 p-4 text-left">
-      <div className="grid grid-cols-[20px_minmax(0,1fr)] gap-x-3 gap-y-3 text-sm">
-        <span aria-hidden="true">📍</span><p className="min-w-0 break-words"><span className="block text-[10px] uppercase text-muted-foreground">Départ</span>{ride.pickup}</p>
-        <span aria-hidden="true">🏁</span><p className="min-w-0 break-words"><span className="block text-[10px] uppercase text-muted-foreground">Destination</span>{ride.destination}</p>
-      </div>
-      <div className="mt-4 grid grid-cols-3 gap-2 border-t border-border pt-4 text-center">
-        <SummaryFact icon={<CircleDollarSign />} value={`${ride.price.toLocaleString("fr-FR")} FCFA`} />
-        <SummaryFact icon={ride.comfort === "climatise" ? <Snowflake /> : <Wind />} value={ride.comfort === "climatise" ? "Climatisé" : "Standard"} />
-        <SummaryFact icon={<Clock3 />} value={paymentLabels[ride.payment]} />
-      </div>
+    <div className="mt-2 text-left">
+      <h1 className="text-center text-2xl font-semibold">Chauffeur trouvé : {contact.driver_first_name}</h1>
+      <p className="mt-3 text-center text-sm text-muted-foreground">Échangez avec le chauffeur pour confirmer le prix et les modalités du trajet, puis revenez ici.</p>
+      {contact.whatsapp_url ? (
+        <Button asChild className="mt-5 h-14 w-full bg-live text-base font-semibold text-foreground shadow-live hover:bg-live/90">
+          <a href={contact.whatsapp_url} target="_blank" rel="noreferrer"><MessageCircle />Contacter le chauffeur sur WhatsApp</a>
+        </Button>
+      ) : (
+        <p className="mt-5 rounded-md border border-primary/30 bg-primary/10 p-3 text-center text-xs text-primary">Le numéro WhatsApp de ce chauffeur n’est pas disponible. Vous pouvez continuer à chercher un autre chauffeur ou annuler.</p>
+      )}
+      <p className="mt-2 text-center text-[11px] text-muted-foreground">WhatsApp s’ouvre avec un message prêt : c’est vous qui appuyez sur « Envoyer ». Allo Taxi n’envoie rien.</p>
+
+      {mode === "choose" && (
+        <div className="mt-6 grid gap-2 sm:grid-cols-2">
+          <Button type="button" onClick={() => setMode("agree")} className="h-12 font-semibold shadow-gold">Nous sommes d’accord</Button>
+          <Button type="button" variant="outline" onClick={() => setMode("disagree")} className="h-12">Nous n’avons pas trouvé d’accord</Button>
+        </div>
+      )}
+      {mode === "agree" && (
+        <div className="mt-6 rounded-md border border-border bg-background/35 p-4">
+          <p className="text-xs text-muted-foreground">Prix proposé initial : <strong className="text-foreground">{status.price_proposed.toLocaleString("fr-FR")} FCFA</strong></p>
+          <label className="mt-3 block"><span className="mb-2 block text-xs font-medium">Prix final convenu avec le chauffeur (FCFA)</span>
+            <Input type="number" min={500} max={100000} step={100} value={finalPrice} onChange={(e) => setFinalPrice(Number(e.target.value))} className="h-12 text-center font-bold tabular-nums" />
+          </label>
+          <p className="mt-2 text-[11px] text-muted-foreground">Une fois confirmé, ce prix ne pourra plus être modifié.</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Button type="button" variant="ghost" onClick={() => setMode("choose")}>Retour</Button>
+            <Button type="button" disabled={busy} onClick={() => void onRun(() => supabase.rpc("confirm_ride_after_contact_v1", { _ride_id: session.id, _token: session.token, _final_price: Math.round(finalPrice) }), "Confirmation impossible pour le moment.")} className="font-semibold">Confirmer {Number.isFinite(finalPrice) ? finalPrice.toLocaleString("fr-FR") : ""} FCFA</Button>
+          </div>
+        </div>
+      )}
+      {mode === "disagree" && (
+        <div className="mt-6 space-y-3 rounded-md border border-border bg-background/35 p-4">
+          <div>
+            <p className="text-sm font-semibold">Continuer à chercher un autre chauffeur</p>
+            <p className="mt-1 text-xs text-muted-foreground">Prévenez {contact.driver_first_name} sur WhatsApp : il libérera votre demande depuis son application, puis elle retournera automatiquement aux autres chauffeurs. Restez sur cet écran.</p>
+          </div>
+          <div className="border-t border-border pt-3">
+            <p className="text-sm font-semibold">Arrêter ma recherche</p>
+            <p className="mt-1 text-xs text-muted-foreground">La mise en relation se termine sans accord.</p>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => void onRun(() => supabase.rpc("mark_contact_failed_v1", { _ride_id: session.id, _token: session.token }), "Action impossible pour le moment.")} className="mt-2 w-full">Arrêter ma recherche</Button>
+          </div>
+          <Button type="button" variant="ghost" onClick={() => setMode("choose")} className="w-full text-xs">Retour</Button>
+        </div>
+      )}
     </div>
   );
 }
 
-function SummaryFact({ icon, value }: { icon: React.ReactNode; value: string }) {
-  return <div className="min-w-0 text-[10px] text-muted-foreground [&_svg]:mx-auto [&_svg]:mb-1.5 [&_svg]:size-4 [&_svg]:text-primary"><span aria-hidden="true">{icon}</span><span className="block break-words">{value}</span></div>;
+function SafetyCard({ safety }: { safety: NonNullable<RideStatus["safety"]> }) {
+  const vehicle = [safety.vehicle_make, safety.vehicle_model].filter(Boolean).join(" ") || "Véhicule";
+  return (
+    <article className="glass-panel p-5">
+      <p className="flex items-center gap-2 text-xs font-semibold uppercase text-live"><BadgeCheck className="size-4" />Fiche de votre chauffeur</p>
+      <div className="mt-4 grid grid-cols-[88px_minmax(0,1fr)] gap-4">
+        {safety.driver_photo_url ? (
+          <img src={safety.driver_photo_url} alt={`Photo de ${safety.driver_first_name}`} loading="lazy" className="size-[88px] rounded-md bg-[#0D0D0D] object-contain" />
+        ) : (
+          <div className="grid size-[88px] place-items-center rounded-md border border-dashed border-border bg-secondary p-2 text-center text-[10px] text-muted-foreground">Photo non encore disponible</div>
+        )}
+        <div className="min-w-0">
+          <h2 className="truncate text-xl font-semibold">{safety.driver_first_name}</h2>
+          <p className="mt-1 text-xs text-muted-foreground">{vehicle}{safety.vehicle_color ? ` · ${safety.vehicle_color}` : ""}</p>
+          <p className="mt-3 text-[10px] font-semibold uppercase text-muted-foreground">Plaque</p>
+          <p className="mt-1 text-xl font-bold">{safety.vehicle_plate ?? "Non renseignée"}</p>
+        </div>
+      </div>
+      {!safety.vehicle_photo_url && <p className="mt-3 text-[11px] text-muted-foreground">Photo du véhicule : non encore disponible. Vérifiez la plaque avant de monter.</p>}
+    </article>
+  );
 }
 
+function RideSummary({ status }: { status: RideStatus }) {
+  return (
+    <div className="glass-panel p-5 text-left">
+      <div className="grid grid-cols-[20px_minmax(0,1fr)] gap-x-3 gap-y-3 text-sm">
+        <span aria-hidden="true">📍</span><p className="min-w-0 break-words"><span className="block text-[10px] uppercase text-muted-foreground">Départ</span>{status.pickup_location}{status.pickup_landmark && <span className="block text-xs text-muted-foreground">Repère : {status.pickup_landmark}</span>}</p>
+        <span aria-hidden="true">🏁</span><p className="min-w-0 break-words"><span className="block text-[10px] uppercase text-muted-foreground">Destination</span>{status.dropoff_location}{status.dropoff_note && <span className="block text-xs text-muted-foreground">{status.dropoff_note}</span>}</p>
+      </div>
+      <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-4 text-xs sm:grid-cols-3">
+        {status.price_final != null
+          ? <Fact label="Prix convenu" value={`${status.price_final.toLocaleString("fr-FR")} FCFA`} strong />
+          : <Fact label="Prix proposé" value={`${status.price_proposed.toLocaleString("fr-FR")} FCFA`} />}
+        <Fact label="Paiement au chauffeur" value={status.payment_method ? paymentLabels[status.payment_method] : "—"} />
+        <Fact label="Passagers" value={String(status.passenger_count)} />
+        <Fact label="Climatisation" value={status.wants_ac ? "Souhaitée" : "Non"} />
+        <Fact label="Trajet partagé" value={status.allow_sharing ? "Accepté" : "Non"} />
+      </dl>
+    </div>
+  );
+}
+
+function Fact({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return <div className="min-w-0"><dt className="text-[10px] uppercase text-muted-foreground">{label}</dt><dd className={cn("mt-0.5 break-words", strong && "font-bold text-primary")}>{value}</dd></div>;
+}
+
+function StatusRail({ status }: { status: V1Status }) {
+  const steps: { key: V1Status[]; icon: React.ReactNode; label: string }[] = [
+    { key: ["PENDING"], icon: <Clock3 />, label: "Recherche" },
+    { key: ["CONTACT_PENDING"], icon: <MessageCircle />, label: "Contact" },
+    { key: ["CONFIRMED", "DRIVER_EN_ROUTE", "DRIVER_ARRIVED"], icon: <CarFront />, label: "Prise en charge" },
+    { key: ["ONBOARD"], icon: <Flag />, label: "Trajet" },
+  ];
+  const current = steps.findIndex((st) => st.key.includes(status));
+  return (
+    <ol className="mx-auto flex max-w-sm items-center" aria-label={`Étape ${current + 1} sur 4`}>
+      {steps.map((st, i) => (
+        <li key={st.label} className={cn("flex items-center", i < steps.length - 1 && "flex-1")}>
+          <span title={st.label} className={cn("grid size-8 shrink-0 place-items-center rounded-full border [&_svg]:size-3.5", i <= current ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary text-muted-foreground")}>{st.icon}</span>
+          {i < steps.length - 1 && <span className={cn("h-px flex-1", i < current ? "bg-primary" : "bg-border")} />}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function Terminal({ title, text, onNew, positive = false }: { title: string; text: string; onNew: () => void; positive?: boolean }) {
+  return (
+    <section className="glass-panel p-8 text-center">
+      <div className={cn("mx-auto grid size-14 place-items-center rounded-full", positive ? "bg-live/15 text-live" : "bg-secondary text-muted-foreground")}>{positive ? <BadgeCheck className="size-7" /> : <X className="size-7" />}</div>
+      <h1 className="mt-5 text-2xl font-semibold">{title}</h1>
+      {text && <p className="mt-2 text-sm text-muted-foreground">{text}</p>}
+      <Button type="button" onClick={onNew} className="mt-6 h-12 w-full font-semibold shadow-gold sm:w-auto sm:px-8">Nouvelle demande</Button>
+    </section>
+  );
+}
+
+/* ---------- Compatibilité : course legacy publiée avant la mise à jour ---------- */
+type LegacyRow = { status: string; chauffeur_first_name: string | null; vehicle_model: string | null; vehicle_plate: string | null; chauffeur_phone: string | null };
+function LegacyTracker({ session, onDone }: { session: Session; onDone: () => void }) {
+  const [row, setRow] = useState<LegacyRow | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const load = () => supabase.rpc("get_ride_status", { _ride_id: session.id, _token: session.token }).then(({ data, error: err }) => {
+      if (!err) setRow((data?.[0] as LegacyRow | undefined) ?? null);
+    });
+    void load();
+    const t = window.setInterval(load, POLL_MS);
+    return () => window.clearInterval(t);
+  }, [session]);
+  async function cancel() {
+    const { error: err } = await supabase.rpc("cancel_ride_public", { _ride_id: session.id, _token: session.token });
+    if (err) return setError("Annulation impossible pour le moment.");
+    onDone();
+  }
+  if (row === undefined) return <p className="glass-panel p-8 text-center text-sm text-muted-foreground">Chargement de votre course…</p>;
+  if (!row || ["completed", "canceled"].includes(row.status)) {
+    return <Terminal title={row?.status === "completed" ? "Course terminée" : "Course terminée ou expirée"} text="Votre ancienne demande n’est plus active." onNew={onDone} positive={row?.status === "completed"} />;
+  }
+  const labels: Record<string, string> = { pending: "Recherche d’un chauffeur", negotiating: "Mise en relation", onboard: "Course en cours" };
+  return (
+    <section className="glass-panel p-6 text-center">
+      <p className="text-xs font-semibold uppercase text-primary">Demande publiée avant la mise à jour</p>
+      <h1 className="mt-2 text-2xl font-semibold">{labels[row.status] ?? "Course en cours"}</h1>
+      {row.chauffeur_first_name && <p className="mt-3 text-sm">{row.chauffeur_first_name} · {row.vehicle_model} · <strong>{row.vehicle_plate}</strong></p>}
+      {row.chauffeur_phone && row.status === "negotiating" && (
+        <Button asChild className="mt-5 h-12 w-full bg-live font-semibold text-foreground hover:bg-live/90"><a href={`https://wa.me/${row.chauffeur_phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer"><MessageCircle />Contacter le chauffeur sur WhatsApp</a></Button>
+      )}
+      {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+      {row.status !== "onboard" && <Button type="button" variant="outline" onClick={() => void cancel()} className="mt-4 w-full"><X />Annuler ma demande</Button>}
+    </section>
+  );
+}
+
+/* ---------- Petits composants ---------- */
 function ChoiceButton({ active, onClick, icon, title, subtitle }: { active: boolean; onClick: () => void; icon: React.ReactNode; title: string; subtitle: string }) {
   return (
     <Button type="button" variant="outline" aria-pressed={active} onClick={onClick} className={cn("h-20 min-w-0 justify-start px-3 text-left", active && "border-primary bg-primary/10 hover:bg-primary/10")}>
@@ -601,15 +628,4 @@ function ChoiceButton({ active, onClick, icon, title, subtitle }: { active: bool
 
 function Field({ label, error, children }: { label: string; error: string | undefined; children: React.ReactNode }) {
   return <label className="block"><span className="mb-2 block text-xs font-medium">{label}</span>{children}{error && <span className="mt-1.5 block text-xs text-destructive" role="alert">{error}</span>}</label>;
-}
-function SharedRideOption({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="glass-panel flex cursor-pointer items-start gap-3 p-5">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1 size-5 shrink-0 accent-[var(--color-primary)]" />
-      <span>
-        <span className="block text-sm font-semibold">J’accepte de partager le taxi</span>
-        <span className="mt-1 block text-xs leading-5 text-muted-foreground">Une fois à bord, le chauffeur pourra prendre jusqu’à 2 autres passagers allant dans la même direction. Votre prix ne change pas.</span>
-      </span>
-    </label>
-  );
 }

@@ -49,6 +49,8 @@ export const Route = createFileRoute("/chauffeur")({
 });
 
 type Payment = string;
+const paymentLabels: Record<string, string> = { CASH: "Espèces", AIRTEL_MONEY: "Airtel Money", MOOV_MONEY: "Moov Money" };
+const paymentLabel = (p: string) => paymentLabels[p] ?? p;
 
 type RideOffer = {
   id: string;
@@ -60,15 +62,39 @@ type RideOffer = {
   payment: Payment;
   airConditioning: boolean;
   price: number;
+  landmark?: string | null;
+  dropoffNote?: string | null;
+  passengers?: number | null;
+  sharing?: boolean;
 };
 
+/** Course legacy publiée avant LOT 4B : conservée uniquement pour être menée à son terme. */
 type ActiveRide = RideOffer & { status: "negotiating" | "onboard"; sharing: boolean; anchor: boolean };
+
+type V1Status = "CONTACT_PENDING" | "CONFIRMED" | "DRIVER_EN_ROUTE" | "DRIVER_ARRIVED" | "ONBOARD";
+/** Course V1 en cours : projection serveur get_my_active_rides, sans téléphone du client. */
+type V1Ride = {
+  ride_id: string;
+  status: V1Status;
+  client_first_name: string;
+  pickup_location: string;
+  pickup_landmark: string | null;
+  dropoff_location: string;
+  dropoff_note: string | null;
+  passenger_count: number | null;
+  wants_ac: boolean;
+  allow_sharing: boolean;
+  payment_method: string | null;
+  price_proposed: number;
+  price_final: number | null;
+};
 
 type PersistedDriverState = {
   accessActive: boolean;
   isOnline: boolean;
   airConditioning: boolean;
   activeRides: ActiveRide[];
+  v1Ride: V1Ride | null;
 };
 
 type DriverRow = { status: string; first_name: string; has_ac: boolean };
@@ -76,8 +102,9 @@ type DriverRow = { status: string; first_name: string; has_ac: boolean };
 const STORAGE_KEY = "allo-taxi-driver-workspace-v3";
 const MAX_SEATS = 3;
 const POOL_REFRESH_MS = 10000;
+const ACTIVE_REFRESH_MS = 6000;
 
-const defaultState: PersistedDriverState = { accessActive: false, isOnline: false, airConditioning: true, activeRides: [] };
+const defaultState: PersistedDriverState = { accessActive: false, isOnline: false, airConditioning: true, activeRides: [], v1Ride: null };
 
 const registrationSchema = z.object({
   first_name: z.string().trim().min(2, "Prénom trop court.").max(40),
@@ -99,7 +126,14 @@ function getPosition(): Promise<{ lat: number; lng: number } | null> {
 
 function friendlyError(message: string | undefined) {
   if (!message) return "Action impossible pour le moment.";
-  if (message.includes("déjà prise")) return "Cette course vient d’être prise par un autre chauffeur.";
+  if (message.includes("RIDE_UNAVAILABLE") || message.includes("déjà prise")) return "Cette course vient d’être prise par un autre chauffeur ou n’est plus disponible.";
+  if (message.includes("DRIVER_ALREADY_ENGAGED")) return "Terminez d’abord votre course en cours.";
+  if (message.includes("RIDE_REQUIRES_AC")) return "Cette course demande un véhicule climatisé.";
+  if (message.includes("DRIVER_OFFLINE")) return "Passez en ligne pour prendre une course.";
+  if (message.includes("DAY_ACCESS_REQUIRED")) return "Activez votre accès du jour pour recevoir des courses.";
+  if (message.includes("DOCUMENTS") || message.includes("ELIGIB")) return "Votre dossier doit être complété avant de prendre des courses.";
+  if (message.includes("REASON_REQUIRED")) return "Indiquez un motif d’au moins 3 caractères.";
+  if (message.includes("NOT_ALLOWED") || message.includes("NOT_ASSIGNED")) return "Action impossible : la course a changé d’état.";
   if (message.includes("Abonnement")) return "Activez votre journée pour recevoir des courses.";
   if (message.includes("TRAJET_VERROUILLE")) return message.split("TRAJET_VERROUILLE: ")[1] ? `Trajet verrouillé : ${message.split("TRAJET_VERROUILLE: ")[1]}.` : "Trajet verrouillé.";
   if (message.includes("Clôturez")) return "Clôturez d’abord votre course en cours.";
@@ -161,50 +195,80 @@ function DriverWorkspace() {
     setDriver(data ?? null);
     if (!data || data.status !== "approved") return;
     // Ticket journalier V1 : driver_day_passes est la seule référence (plus de lecture de subscriptions)
-    const [{ data: access }, { data: current }] = await Promise.all([
+    // Courses en cours : projection serveur (plus de lecture directe de la table des courses)
+    const [{ data: access }, { data: current, error: currentError }] = await Promise.all([
       supabase.rpc("get_my_driver_day_access"),
-      supabase.from("rides").select("*").eq("chauffeur_id", user.id).in("status", ["negotiating", "onboard"]).order("started_negotiation_at"),
+      supabase.rpc("get_my_active_rides"),
     ]);
     const acc = (access ?? {}) as { access_valid?: boolean; ticket_mode?: string; ticket_price_fcfa?: number; xfin_configured?: boolean };
     const valid = Boolean(acc.access_valid);
     setTicket({ mode: acc.ticket_mode === "PAID" ? "PAID" : "FREE", price: acc.ticket_price_fcfa ?? 1000, xfin: Boolean(acc.xfin_configured) });
+    const rows = (currentError ? null : (current as unknown as Array<Record<string, unknown>> | null)) ?? null;
     patchState({
       accessActive: valid,
       airConditioning: data.has_ac,
       ...(valid ? {} : { isOnline: false }),
-      activeRides: (current ?? []).map((row) => ({ id: row.id, client: row.client_name, phone: row.client_phone, distance: null, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed, status: row.status === "onboard" ? "onboard" as const : "negotiating" as const, sharing: row.allow_sharing, anchor: row.anchor_ride_id === null })),
+      ...(rows ? {
+        v1Ride: (rows.find((r) => r["workflow_version"] === "v1") as unknown as V1Ride | undefined) ?? null,
+        activeRides: rows.filter((r) => r["workflow_version"] === "legacy").map((r) => ({
+          id: String(r["ride_id"]), client: String(r["client_first_name"] ?? ""), phone: String(r["client_phone"] ?? ""), distance: null,
+          pickup: String(r["pickup_location"]), destination: String(r["dropoff_location"]), payment: String(r["payment_method"] ?? ""),
+          airConditioning: Boolean(r["wants_ac"]), price: Number(r["price_proposed"]),
+          status: r["status"] === "onboard" ? "onboard" as const : "negotiating" as const, sharing: Boolean(r["allow_sharing"]), anchor: Boolean(r["is_anchor"]),
+        })),
+      } : {}),
     });
   }, [patchState, user]);
 
   useEffect(() => { void loadDriver(); }, [loadDriver]);
 
-  // Pool localisé : rafraîchi toutes les 10 s quand le chauffeur est en ligne
+  // Pool V1 : uniquement les nouvelles courses V1, projection sans identité ni téléphone du client
   const refreshPool = useCallback(async () => {
     const position = await getPosition();
-    const { data, error } = await supabase.rpc("get_localized_pool_for_driver", { _lat: position?.lat ?? null as unknown as number, _lng: position?.lng ?? null as unknown as number, _radius_km: null as unknown as number });
+    const { data, error } = await supabase.rpc("get_pool_v1", { _lat: position?.lat ?? null as unknown as number, _lng: position?.lng ?? null as unknown as number, _radius_km: null as unknown as number });
     if (error) {
-      if (error.message.includes("Abonnement")) patchState({ accessActive: false, isOnline: false });
+      if (error.message.includes("DAY_ACCESS_REQUIRED")) patchState({ accessActive: false, isOnline: false });
       return;
     }
     const rows = data ?? [];
-    const fresh = rows.some((row) => !seenRideIds.current.has(row.id));
+    const fresh = rows.some((row) => !seenRideIds.current.has(row.ride_id));
     if (fresh && poolPrimed.current) chimes.newRide();
-    rows.forEach((row) => seenRideIds.current.add(row.id));
+    rows.forEach((row) => seenRideIds.current.add(row.ride_id));
     poolPrimed.current = true;
-    setOffers(rows.map((row) => ({ id: row.id, client: "", phone: "", distance: row.distance_km, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed })));
+    setOffers(rows.map((row) => ({ id: row.ride_id, client: "", phone: "", distance: row.distance_km, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed, landmark: row.pickup_landmark, dropoffNote: row.dropoff_note, passengers: row.passenger_count, sharing: row.allow_sharing })));
   }, [patchState]);
 
   const negotiating = state.activeRides.find((ride) => ride.status === "negotiating") ?? null;
   const onboard = state.activeRides.filter((ride) => ride.status === "onboard");
   const anchorRide = state.activeRides.find((ride) => ride.anchor) ?? null;
-  const canShare = state.activeRides.length === 0 || (!negotiating && Boolean(anchorRide?.sharing) && anchorRide?.status === "onboard" && state.activeRides.length < MAX_SEATS);
+  // LOT 4B : pas de partage réel ; toute course en cours (legacy ou V1) suspend le pool.
+  const engaged = state.activeRides.length > 0 || state.v1Ride !== null;
 
   useEffect(() => {
-    if (!isApproved || !state.accessActive || !state.isOnline || negotiating || !canShare || !networkOnline) return;
+    if (!isApproved || !state.accessActive || !state.isOnline || engaged || !networkOnline) return;
     void refreshPool();
     const interval = window.setInterval(() => void refreshPool(), POOL_REFRESH_MS);
     return () => window.clearInterval(interval);
-  }, [isApproved, networkOnline, refreshPool, state.accessActive, state.isOnline, negotiating, canShare]);
+  }, [isApproved, networkOnline, refreshPool, state.accessActive, state.isOnline, engaged]);
+
+  // Course en cours : l'état serveur fait foi (le client peut confirmer, refuser ou annuler à tout moment)
+  useEffect(() => {
+    if (!isApproved || !engaged || !networkOnline) return;
+    const interval = window.setInterval(() => void loadDriver(), ACTIVE_REFRESH_MS);
+    return () => window.clearInterval(interval);
+  }, [isApproved, engaged, networkOnline, loadDriver]);
+
+  const prevV1 = useRef<{ id: string; status: V1Status } | null>(null);
+  useEffect(() => {
+    const prev = prevV1.current;
+    const cur = state.v1Ride;
+    if (prev && cur && prev.id === cur.ride_id && prev.status === "CONTACT_PENDING" && cur.status === "CONFIRMED") {
+      chimes.accepted();
+      setNotice("Le client a confirmé la course.");
+    }
+    if (prev && hydrated && !cur && !state.activeRides.length) setNotice("La course n’est plus active (terminée, annulée ou relâchée).");
+    prevV1.current = cur ? { id: cur.ride_id, status: cur.status } : null;
+  }, [state.v1Ride, state.activeRides.length, hydrated]);
 
   // Position partagée toutes les 20 s pendant une course : alimente le temps d'arrivée affiché au client
   const lockedId = negotiating?.id;
@@ -248,16 +312,25 @@ function DriverWorkspace() {
 
   async function takeRide(id: string) {
     setBusy(true);
-    const { data, error } = await supabase.rpc("take_ride", { _ride_id: id });
+    const { error } = await supabase.rpc("reserve_ride_v1", { _ride_id: id });
     setBusy(false);
-    const row = data?.[0];
-    if (error || !row) {
-      setNotice(friendlyError(error?.message));
+    if (error) {
+      setNotice(friendlyError(error.message));
       void refreshPool();
       return;
     }
     setOffers([]);
     await loadDriver();
+    setNotice("Course réservée. Le client va vous contacter sur WhatsApp.");
+  }
+
+  async function runV1(fn: () => PromiseLike<{ error: { message: string } | null }>, success: string) {
+    setBusy(true);
+    const { error } = await fn();
+    setBusy(false);
+    await loadDriver();
+    if (error) return setNotice(friendlyError(error.message));
+    setNotice(success);
   }
 
   async function finishRide(success: boolean) {
@@ -317,14 +390,27 @@ function DriverWorkspace() {
 
         <div className={cn("mt-5 space-y-5 transition duration-700", !state.accessActive && "pointer-events-none select-none blur-md")} aria-hidden={!state.accessActive}>
           <ActivationDashboard state={state} onPatch={(update) => void updateAvailability(update)} />
-          {onboard.length > 0 && <OnboardPanel rides={onboard} anchor={anchorRide} seatsLeft={MAX_SEATS - state.activeRides.length} busy={busy} onDropOff={(id) => void dropOff(id)} />}
-          {negotiating ? (
-            <NegotiationScreen ride={negotiating} busy={busy} onFinish={(success) => void finishRide(success)} />
-          ) : !state.isOnline ? (
-            <OfflinePanel />
-          ) : canShare ? (
-            <RidePool offers={offers} airConditioning={state.airConditioning} busy={busy} shared={state.activeRides.length > 0} onTake={(id) => void takeRide(id)} />
-          ) : null}
+          {state.v1Ride ? (
+            <V1RideScreen
+              ride={state.v1Ride}
+              busy={busy}
+              onAdvance={(action, success) => void runV1(() => supabase.rpc("advance_ride_v1", { _ride_id: state.v1Ride!.ride_id, _action: action }), success)}
+              onRelease={(reason) => void runV1(() => supabase.rpc("release_ride_v1", { _ride_id: state.v1Ride!.ride_id, _reason: reason as unknown as string }), "Course relâchée : elle retourne aux autres chauffeurs.")}
+              onCancel={(reason) => void runV1(() => supabase.rpc("cancel_ride_by_driver_v1", { _ride_id: state.v1Ride!.ride_id, _reason: reason }), "Course annulée. Le client est informé sur son écran.")}
+            />
+          ) : (
+            <>
+              {/* Compatibilité : course legacy acceptée avant la mise à jour, menée à son terme puis plus jamais proposée */}
+              {onboard.length > 0 && <OnboardPanel rides={onboard} anchor={anchorRide} seatsLeft={MAX_SEATS - state.activeRides.length} busy={busy} onDropOff={(id) => void dropOff(id)} />}
+              {negotiating ? (
+                <NegotiationScreen ride={negotiating} busy={busy} onFinish={(success) => void finishRide(success)} />
+              ) : !state.isOnline ? (
+                <OfflinePanel />
+              ) : !engaged ? (
+                <RidePool offers={offers} airConditioning={state.airConditioning} busy={busy} onTake={(id) => void takeRide(id)} />
+              ) : null}
+            </>
+          )}
         </div>
 
         {!state.accessActive && (
@@ -514,10 +600,11 @@ function RideCard({ ride, busy, onTake }: { ride: RideOffer; busy: boolean; onTa
       <RouteDetails ride={ride} />
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         <div className="flex flex-wrap gap-2">
-          <RequirementBadge icon={<Banknote />} label={ride.payment} />
+          <RequirementBadge icon={<Banknote />} label={paymentLabel(ride.payment)} />
+          {ride.passengers != null && <RequirementBadge icon={<Users />} label={`${ride.passengers} passager(s)`} />}
           <RequirementBadge icon={ride.airConditioning ? <Snowflake /> : <Wind />} label={ride.airConditioning ? "Climatisation exigée" : "Standard"} highlight={ride.airConditioning} />
         </div>
-        <Button type="button" disabled={busy} onClick={onTake} className="h-11 w-full px-7 font-bold shadow-gold sm:w-auto">Prendre <Navigation /></Button>
+        <Button type="button" disabled={busy} onClick={onTake} className="h-11 w-full px-7 font-bold shadow-gold sm:w-auto">Réserver <Navigation /></Button>
       </div>
     </article>
   );
@@ -570,12 +657,77 @@ function OfflinePanel() {
 function RouteDetails({ ride, prominent = false }: { ride: RideOffer; prominent?: boolean }) {
   return (
     <div className={cn("mt-5 grid grid-cols-[24px_minmax(0,1fr)] gap-x-3 gap-y-4", prominent && "rounded-md border border-border bg-background/35 p-4")}>
-      <span className="grid size-6 place-items-center rounded-full bg-live/15 text-live"><MapPin className="size-3.5" /></span><p className="min-w-0 break-words text-sm"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground">Départ</span>{ride.pickup}</p>
-      <span className="grid size-6 place-items-center rounded-full bg-primary/15 text-primary"><Navigation className="size-3.5" /></span><p className="min-w-0 break-words text-sm"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground">Destination</span>{ride.destination}</p>
+      <span className="grid size-6 place-items-center rounded-full bg-live/15 text-live"><MapPin className="size-3.5" /></span><p className="min-w-0 break-words text-sm"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground">Départ</span>{ride.pickup}{ride.landmark && <span className="mt-1 block text-xs text-muted-foreground">Repère : {ride.landmark}</span>}</p>
+      <span className="grid size-6 place-items-center rounded-full bg-primary/15 text-primary"><Navigation className="size-3.5" /></span><p className="min-w-0 break-words text-sm"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground">Destination</span>{ride.destination}{ride.dropoffNote && <span className="mt-1 block text-xs text-muted-foreground">{ride.dropoffNote}</span>}</p>
     </div>
   );
 }
 
 function RequirementBadge({ icon, label, highlight = false }: { icon: React.ReactNode; label: string; highlight?: boolean }) {
   return <span className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[10px] font-semibold [&_svg]:size-3.5", highlight ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-secondary text-muted-foreground")}>{icon}{label}</span>;
+}
+const v1Labels: Record<V1Status, string> = {
+  CONTACT_PENDING: "En attente du contact client",
+  CONFIRMED: "Course confirmée par le client",
+  DRIVER_EN_ROUTE: "En route vers le client",
+  DRIVER_ARRIVED: "Arrivé au point de départ",
+  ONBOARD: "Client à bord",
+};
+
+function V1RideScreen({ ride, busy, onAdvance, onRelease, onCancel }: {
+  ride: V1Ride;
+  busy: boolean;
+  onAdvance: (action: "MARK_EN_ROUTE" | "MARK_ARRIVED" | "MARK_ONBOARD" | "MARK_COMPLETED", success: string) => void;
+  onRelease: (reason: string | null) => void;
+  onCancel: (reason: string) => void;
+}) {
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const next: Partial<Record<V1Status, { action: "MARK_EN_ROUTE" | "MARK_ARRIVED" | "MARK_ONBOARD" | "MARK_COMPLETED"; label: string; success: string }>> = {
+    CONFIRMED: { action: "MARK_EN_ROUTE", label: "Je pars chercher le client", success: "Le client voit que vous êtes en route." },
+    DRIVER_EN_ROUTE: { action: "MARK_ARRIVED", label: "Je suis arrivé", success: "Le client est prévenu de votre arrivée." },
+    DRIVER_ARRIVED: { action: "MARK_ONBOARD", label: "Client à bord", success: "Bonne route." },
+    ONBOARD: { action: "MARK_COMPLETED", label: "Client déposé — terminer", success: "Course terminée." },
+  };
+  const step = next[ride.status];
+  const canCancel = ["CONFIRMED", "DRIVER_EN_ROUTE", "DRIVER_ARRIVED"].includes(ride.status);
+  return (
+    <section className="glass-panel animate-journey-in overflow-hidden">
+      <div className="border-b border-live/25 bg-live/10 px-5 py-4 text-center text-xs font-bold uppercase text-live"><span className="mr-2 inline-block size-2 rounded-full bg-live" />{v1Labels[ride.status]}</div>
+      <div className="p-5 sm:p-8">
+        <div className="text-center">
+          <div className="mx-auto grid size-14 place-items-center rounded-md bg-primary/10 text-primary"><UserRound className="size-7" /></div>
+          <h1 className="mt-4 text-3xl font-semibold">{ride.client_first_name}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {ride.price_final != null ? <>Prix convenu : <strong className="text-primary">{ride.price_final.toLocaleString("fr-FR")} FCFA</strong></> : <>Prix proposé : {ride.price_proposed.toLocaleString("fr-FR")} FCFA</>}
+          </p>
+        </div>
+        <RouteDetails ride={{ id: ride.ride_id, client: "", phone: "", distance: null, pickup: ride.pickup_location, destination: ride.dropoff_location, payment: ride.payment_method ?? "", airConditioning: ride.wants_ac, price: ride.price_proposed, landmark: ride.pickup_landmark, dropoffNote: ride.dropoff_note }} prominent />
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <RequirementBadge icon={<Banknote />} label={`${paymentLabel(ride.payment_method ?? "")} — au chauffeur`} />
+          <RequirementBadge icon={<Users />} label={`${ride.passenger_count ?? "?"} passager(s)`} />
+          <RequirementBadge icon={ride.wants_ac ? <Snowflake /> : <Wind />} label={ride.wants_ac ? "Climatisation souhaitée" : "Standard"} highlight={ride.wants_ac} />
+        </div>
+
+        {ride.status === "CONTACT_PENDING" && (
+          <div className="mt-6 space-y-3">
+            <p className="rounded-md border border-border bg-background/35 p-4 text-center text-xs leading-5 text-muted-foreground">Le client a votre WhatsApp. Il vous écrit pour convenir du prix, puis confirme la course depuis son écran. Allo Taxi ne vous communique pas son numéro.</p>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => onRelease(null)} className="h-12 w-full whitespace-normal text-xs"><XCircle />Pas d’accord — relâcher la course</Button>
+          </div>
+        )}
+        {step && <Button type="button" disabled={busy} onClick={() => onAdvance(step.action, step.success)} className="mt-6 h-14 w-full bg-live text-sm font-bold text-foreground shadow-live hover:bg-live/90"><CheckCircle2 />{step.label}</Button>}
+        {canCancel && (cancelOpen ? (
+          <div className="mt-4 space-y-2 rounded-md border border-destructive/30 p-4">
+            <label className="block text-xs font-medium">Motif d’annulation (obligatoire)<Input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={200} className="mt-2 h-11" placeholder="Ex : panne du véhicule" /></label>
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant="ghost" onClick={() => setCancelOpen(false)}>Retour</Button>
+              <Button type="button" variant="destructive" disabled={busy || reason.trim().length < 3} onClick={() => onCancel(reason.trim())}>Annuler la course</Button>
+            </div>
+          </div>
+        ) : (
+          <Button type="button" variant="ghost" onClick={() => setCancelOpen(true)} className="mt-3 w-full text-xs text-destructive hover:text-destructive">Annuler la course</Button>
+        ))}
+      </div>
+    </section>
+  );
 }
