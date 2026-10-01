@@ -600,10 +600,11 @@ function RideCard({ ride, busy, onTake }: { ride: RideOffer; busy: boolean; onTa
       <RouteDetails ride={ride} />
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         <div className="flex flex-wrap gap-2">
-          <RequirementBadge icon={<Banknote />} label={ride.payment} />
+          <RequirementBadge icon={<Banknote />} label={paymentLabel(ride.payment)} />
+          {ride.passengers != null && <RequirementBadge icon={<Users />} label={`${ride.passengers} passager(s)`} />}
           <RequirementBadge icon={ride.airConditioning ? <Snowflake /> : <Wind />} label={ride.airConditioning ? "Climatisation exigée" : "Standard"} highlight={ride.airConditioning} />
         </div>
-        <Button type="button" disabled={busy} onClick={onTake} className="h-11 w-full px-7 font-bold shadow-gold sm:w-auto">Prendre <Navigation /></Button>
+        <Button type="button" disabled={busy} onClick={onTake} className="h-11 w-full px-7 font-bold shadow-gold sm:w-auto">Réserver <Navigation /></Button>
       </div>
     </article>
   );
@@ -656,12 +657,77 @@ function OfflinePanel() {
 function RouteDetails({ ride, prominent = false }: { ride: RideOffer; prominent?: boolean }) {
   return (
     <div className={cn("mt-5 grid grid-cols-[24px_minmax(0,1fr)] gap-x-3 gap-y-4", prominent && "rounded-md border border-border bg-background/35 p-4")}>
-      <span className="grid size-6 place-items-center rounded-full bg-live/15 text-live"><MapPin className="size-3.5" /></span><p className="min-w-0 break-words text-sm"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground">Départ</span>{ride.pickup}</p>
-      <span className="grid size-6 place-items-center rounded-full bg-primary/15 text-primary"><Navigation className="size-3.5" /></span><p className="min-w-0 break-words text-sm"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground">Destination</span>{ride.destination}</p>
+      <span className="grid size-6 place-items-center rounded-full bg-live/15 text-live"><MapPin className="size-3.5" /></span><p className="min-w-0 break-words text-sm"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground">Départ</span>{ride.pickup}{ride.landmark && <span className="mt-1 block text-xs text-muted-foreground">Repère : {ride.landmark}</span>}</p>
+      <span className="grid size-6 place-items-center rounded-full bg-primary/15 text-primary"><Navigation className="size-3.5" /></span><p className="min-w-0 break-words text-sm"><span className="mb-1 block text-[10px] font-semibold uppercase text-muted-foreground">Destination</span>{ride.destination}{ride.dropoffNote && <span className="mt-1 block text-xs text-muted-foreground">{ride.dropoffNote}</span>}</p>
     </div>
   );
 }
 
 function RequirementBadge({ icon, label, highlight = false }: { icon: React.ReactNode; label: string; highlight?: boolean }) {
   return <span className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[10px] font-semibold [&_svg]:size-3.5", highlight ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-secondary text-muted-foreground")}>{icon}{label}</span>;
+}
+const v1Labels: Record<V1Status, string> = {
+  CONTACT_PENDING: "En attente du contact client",
+  CONFIRMED: "Course confirmée par le client",
+  DRIVER_EN_ROUTE: "En route vers le client",
+  DRIVER_ARRIVED: "Arrivé au point de départ",
+  ONBOARD: "Client à bord",
+};
+
+function V1RideScreen({ ride, busy, onAdvance, onRelease, onCancel }: {
+  ride: V1Ride;
+  busy: boolean;
+  onAdvance: (action: "MARK_EN_ROUTE" | "MARK_ARRIVED" | "MARK_ONBOARD" | "MARK_COMPLETED", success: string) => void;
+  onRelease: (reason: string | null) => void;
+  onCancel: (reason: string) => void;
+}) {
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const next: Partial<Record<V1Status, { action: "MARK_EN_ROUTE" | "MARK_ARRIVED" | "MARK_ONBOARD" | "MARK_COMPLETED"; label: string; success: string }>> = {
+    CONFIRMED: { action: "MARK_EN_ROUTE", label: "Je pars chercher le client", success: "Le client voit que vous êtes en route." },
+    DRIVER_EN_ROUTE: { action: "MARK_ARRIVED", label: "Je suis arrivé", success: "Le client est prévenu de votre arrivée." },
+    DRIVER_ARRIVED: { action: "MARK_ONBOARD", label: "Client à bord", success: "Bonne route." },
+    ONBOARD: { action: "MARK_COMPLETED", label: "Client déposé — terminer", success: "Course terminée." },
+  };
+  const step = next[ride.status];
+  const canCancel = ["CONFIRMED", "DRIVER_EN_ROUTE", "DRIVER_ARRIVED"].includes(ride.status);
+  return (
+    <section className="glass-panel animate-journey-in overflow-hidden">
+      <div className="border-b border-live/25 bg-live/10 px-5 py-4 text-center text-xs font-bold uppercase text-live"><span className="mr-2 inline-block size-2 rounded-full bg-live" />{v1Labels[ride.status]}</div>
+      <div className="p-5 sm:p-8">
+        <div className="text-center">
+          <div className="mx-auto grid size-14 place-items-center rounded-md bg-primary/10 text-primary"><UserRound className="size-7" /></div>
+          <h1 className="mt-4 text-3xl font-semibold">{ride.client_first_name}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {ride.price_final != null ? <>Prix convenu : <strong className="text-primary">{ride.price_final.toLocaleString("fr-FR")} FCFA</strong></> : <>Prix proposé : {ride.price_proposed.toLocaleString("fr-FR")} FCFA</>}
+          </p>
+        </div>
+        <RouteDetails ride={{ id: ride.ride_id, client: "", phone: "", distance: null, pickup: ride.pickup_location, destination: ride.dropoff_location, payment: ride.payment_method ?? "", airConditioning: ride.wants_ac, price: ride.price_proposed, landmark: ride.pickup_landmark, dropoffNote: ride.dropoff_note }} prominent />
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <RequirementBadge icon={<Banknote />} label={`${paymentLabel(ride.payment_method ?? "")} — au chauffeur`} />
+          <RequirementBadge icon={<Users />} label={`${ride.passenger_count ?? "?"} passager(s)`} />
+          <RequirementBadge icon={ride.wants_ac ? <Snowflake /> : <Wind />} label={ride.wants_ac ? "Climatisation souhaitée" : "Standard"} highlight={ride.wants_ac} />
+        </div>
+
+        {ride.status === "CONTACT_PENDING" && (
+          <div className="mt-6 space-y-3">
+            <p className="rounded-md border border-border bg-background/35 p-4 text-center text-xs leading-5 text-muted-foreground">Le client a votre WhatsApp. Il vous écrit pour convenir du prix, puis confirme la course depuis son écran. Allo Taxi ne vous communique pas son numéro.</p>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => onRelease(null)} className="h-12 w-full whitespace-normal text-xs"><XCircle />Pas d’accord — relâcher la course</Button>
+          </div>
+        )}
+        {step && <Button type="button" disabled={busy} onClick={() => onAdvance(step.action, step.success)} className="mt-6 h-14 w-full bg-live text-sm font-bold text-foreground shadow-live hover:bg-live/90"><CheckCircle2 />{step.label}</Button>}
+        {canCancel && (cancelOpen ? (
+          <div className="mt-4 space-y-2 rounded-md border border-destructive/30 p-4">
+            <label className="block text-xs font-medium">Motif d’annulation (obligatoire)<Input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={200} className="mt-2 h-11" placeholder="Ex : panne du véhicule" /></label>
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant="ghost" onClick={() => setCancelOpen(false)}>Retour</Button>
+              <Button type="button" variant="destructive" disabled={busy || reason.trim().length < 3} onClick={() => onCancel(reason.trim())}>Annuler la course</Button>
+            </div>
+          </div>
+        ) : (
+          <Button type="button" variant="ghost" onClick={() => setCancelOpen(true)} className="mt-3 w-full text-xs text-destructive hover:text-destructive">Annuler la course</Button>
+        ))}
+      </div>
+    </section>
+  );
 }
