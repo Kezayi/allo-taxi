@@ -688,6 +688,41 @@ function NegotiationScreen({ ride, busy, onFinish }: { ride: RideOffer; busy: bo
   );
 }
 
+/** Taxi partagé V1 : places engagées / capacité homologuée et interrupteur des nouvelles propositions. */
+function SharedPanel({ rides, shared, onToggle }: { rides: V1Ride[]; shared: SharedState | null; onToggle: (on: boolean) => void }) {
+  const allSharing = rides.every((r) => r.allow_sharing);
+  const hasOnboard = rides.some((r) => r.status === "ONBOARD");
+  const cap = shared?.passenger_capacity ?? null;
+  const reason = !allSharing
+    ? "Un client n’a pas accepté le partage : aucune autre course jusqu’à sa dépose."
+    : !hasOnboard
+      ? "Le partage s’ouvre une fois le premier client à bord."
+      : cap == null
+        ? "Capacité du véhicule non validée : partage indisponible."
+        : shared && !shared.detour_threshold_set
+          ? "Partage pas encore ouvert par l’administration."
+          : "Seules les courses compatibles avec votre trajet vous sont proposées.";
+  return (
+    <section className="glass-panel p-5 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase text-primary">{rides.length > 1 ? `${rides.length} courses en cours` : "Course en cours"}</p>
+          <p className="mt-1 text-sm">
+            Places engagées : <strong>{shared?.seats_engaged ?? "—"}</strong>{cap != null ? ` / ${cap}` : ""} · à bord : <strong>{shared?.seats_onboard ?? "—"}</strong>
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{reason}</p>
+        </div>
+        {allSharing && (
+          <label className="flex items-center gap-3 text-xs">
+            <span>Accepter d’autres passagers</span>
+            <Switch checked={Boolean(shared?.accepting_new_shared)} onCheckedChange={onToggle} aria-label="Accepter de nouveaux passagers partagés" />
+          </label>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function OfflinePanel() {
   return (
     <section className="glass-panel grid min-h-72 place-items-center p-8 text-center">
