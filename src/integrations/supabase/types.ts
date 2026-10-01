@@ -1478,6 +1478,10 @@ export type Database = {
     Functions: {
       activate_driver_day: { Args: never; Returns: string }
       admin_get_driver_dossier: { Args: { _driver_id: string }; Returns: Json }
+      admin_list_driver_ai_checks: {
+        Args: { _driver_id: string }
+        Returns: Json
+      }
       admin_list_driver_dossiers: {
         Args: never
         Returns: {
