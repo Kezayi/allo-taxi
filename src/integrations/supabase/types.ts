@@ -1557,6 +1557,7 @@ export type Database = {
         }[]
       }
       admin_list_driver_loads_v1: { Args: never; Returns: Json }
+      admin_list_driver_presence_v1: { Args: never; Returns: Json }
       admin_list_driver_restrictions_v1: { Args: never; Returns: Json }
       admin_list_live_rides: { Args: never; Returns: Json }
       admin_list_rides_v1: { Args: { _limit?: number }; Returns: Json }
@@ -1918,6 +1919,7 @@ export type Database = {
       normalize_client_phone_ga: { Args: { _raw: string }; Returns: string }
       normalize_plate: { Args: { _plate: string }; Returns: string }
       onboarding_enforcement_mode: { Args: never; Returns: string }
+      presence_stale_threshold_sec: { Args: never; Returns: number }
       refresh_driver_onboarding_status: {
         Args: { _driver_id: string }
         Returns: string
@@ -2082,6 +2084,16 @@ export type Database = {
       update_driver_position: {
         Args: { _lat: number; _lng: number }
         Returns: number
+      }
+      update_driver_presence_v1: {
+        Args: {
+          _accuracy_m?: number
+          _heading_deg?: number
+          _lat: number
+          _lng: number
+          _position_at?: string
+        }
+        Returns: Json
       }
       update_system_settings: {
         Args: { _daily_price: number; _radius_km: number; _timeout_min: number }

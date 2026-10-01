@@ -288,6 +288,13 @@
       "when": 1790878490420,
       "tag": "0040_lot6_backoffice_finance_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790879384228,
+      "tag": "0041_lot7_presence_notifications",
+      "breakpoints": true
     }
   ]
 }
