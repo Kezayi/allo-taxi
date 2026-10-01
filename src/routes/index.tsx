@@ -67,9 +67,17 @@ function Index() {
   const activity = useLiveActivity();
   const [space, setSpace] = useState<Space>("client");
   const [showPin, setShowPin] = useState(false);
+  const [activeRide, setActiveRide] = useState(false);
+  useEffect(() => {
+    try {
+      setActiveRide(Boolean(sessionStorage.getItem("allo-taxi-ride-v1") || sessionStorage.getItem("allo-taxi-active-ride-v2")));
+    } catch { /* stockage indisponible */ }
+  }, []);
 
   const copy = {
-    client: { title: "Bienvenue à bord.", subtitle: "Votre chauffeur n’est jamais loin.", action: "Accéder à mon espace" },
+    client: activeRide
+      ? { title: "Votre course est en cours.", subtitle: "Retrouvez son suivi en un instant.", action: "Suivre ma course" }
+      : { title: "Bienvenue à bord.", subtitle: "Votre chauffeur n’est jamais loin.", action: "Commander un taxi" },
     chauffeur: { title: "Prêt à rouler ?", subtitle: "Connectez-vous à votre espace professionnel.", action: "Ouvrir mon espace chauffeur" },
     administration: { title: "Pilotage sécurisé.", subtitle: "Accès strictement réservé à la direction.", action: "Accéder au Back-Office" },
   }[space];
@@ -170,15 +178,14 @@ function Index() {
           </div>
 
           <form onSubmit={submit} className="space-y-4">
-            {space === "client" && (
-              <Field label="Prénom" htmlFor="first-name"><Input id="first-name" name="firstName" placeholder="Votre prénom" autoComplete="given-name" required /></Field>
-            )}
+            {space !== "client" && (
             <Field label="Numéro de téléphone" htmlFor="phone">
               <div className="grid grid-cols-[auto_minmax(0,1fr)]">
                 <span className="flex h-12 items-center rounded-l-md border border-r-0 border-input bg-secondary px-3 text-sm font-semibold text-foreground">+241</span>
                 <Input id="phone" name="phone" type="tel" inputMode="tel" placeholder="06 00 00 00 00" autoComplete="tel" required className="h-12 rounded-l-none" />
               </div>
             </Field>
+            )}
             {space !== "client" && (
               <Field label={isSignup ? "Choisissez votre code PIN (4 ou 6 chiffres)" : "Code PIN"} htmlFor="pin">
                 <div className="relative">
@@ -212,7 +219,7 @@ function Index() {
           </form>
 
           <div className="mt-6 flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
-            <Check className="size-3.5 text-live" /> Connexion protégée et confidentielle
+            <Check className="size-3.5 text-live" /> {space === "client" ? "Rapide, simple et sans engagement" : "Connexion protégée et confidentielle"}
           </div>
         </section>
       </div>
