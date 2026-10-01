@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { useServerFn } from "@tanstack/react-start";
+import { getXfinChecklist, type XfinChecklist } from "@/lib/xfin.functions";
 
 type Notice = (message: string) => void;
 
