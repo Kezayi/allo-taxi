@@ -162,6 +162,13 @@
       "when": 1790785963242,
       "tag": "0022_v1_ride_assignments_skip_demo_driver",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790841529813,
+      "tag": "0023_v1_ride_events",
+      "breakpoints": true
     }
   ]
 }
