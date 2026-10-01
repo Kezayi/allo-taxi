@@ -14,6 +14,7 @@ import { Route as AdministrationRouteImport } from './routes/administration'
 import { Route as ChauffeurRouteImport } from './routes/chauffeur'
 import { Route as ClientRouteImport } from './routes/client'
 import { Route as ConnexionRouteImport } from './routes/connexion'
+import { Route as ApiPublicXfinWebhookRouteImport } from './routes/api/public/xfin-webhook'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,6 +41,11 @@ const ConnexionRoute = ConnexionRouteImport.update({
   path: '/connexion',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicXfinWebhookRoute = ApiPublicXfinWebhookRouteImport.update({
+  id: '/api/public/xfin-webhook',
+  path: '/api/public/xfin-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/chauffeur': typeof ChauffeurRoute
   '/client': typeof ClientRoute
   '/connexion': typeof ConnexionRoute
+  '/api/public/xfin-webhook': typeof ApiPublicXfinWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/chauffeur': typeof ChauffeurRoute
   '/client': typeof ClientRoute
   '/connexion': typeof ConnexionRoute
+  '/api/public/xfin-webhook': typeof ApiPublicXfinWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,12 +70,25 @@ export interface FileRoutesById {
   '/chauffeur': typeof ChauffeurRoute
   '/client': typeof ClientRoute
   '/connexion': typeof ConnexionRoute
+  '/api/public/xfin-webhook': typeof ApiPublicXfinWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/administration' | '/chauffeur' | '/client' | '/connexion'
+  fullPaths:
+    | '/'
+    | '/administration'
+    | '/chauffeur'
+    | '/client'
+    | '/connexion'
+    | '/api/public/xfin-webhook'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/administration' | '/chauffeur' | '/client' | '/connexion'
+  to:
+    | '/'
+    | '/administration'
+    | '/chauffeur'
+    | '/client'
+    | '/connexion'
+    | '/api/public/xfin-webhook'
   id:
     | '__root__'
     | '/'
@@ -75,6 +96,7 @@ export interface FileRouteTypes {
     | '/chauffeur'
     | '/client'
     | '/connexion'
+    | '/api/public/xfin-webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -83,6 +105,7 @@ export interface RootRouteChildren {
   ChauffeurRoute: typeof ChauffeurRoute
   ClientRoute: typeof ClientRoute
   ConnexionRoute: typeof ConnexionRoute
+  ApiPublicXfinWebhookRoute: typeof ApiPublicXfinWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -122,6 +145,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConnexionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/xfin-webhook': {
+      id: '/api/public/xfin-webhook'
+      path: '/api/public/xfin-webhook'
+      fullPath: '/api/public/xfin-webhook'
+      preLoaderRoute: typeof ApiPublicXfinWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -131,6 +161,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChauffeurRoute: ChauffeurRoute,
   ClientRoute: ClientRoute,
   ConnexionRoute: ConnexionRoute,
+  ApiPublicXfinWebhookRoute: ApiPublicXfinWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

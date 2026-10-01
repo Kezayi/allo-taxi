@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { useServerFn } from "@tanstack/react-start";
+import { getXfinChecklist, type XfinChecklist } from "@/lib/xfin.functions";
 
 type Notice = (message: string) => void;
 
@@ -289,9 +291,28 @@ function TicketModePanel({ onNotice }: { onNotice: Notice }) {
             <Button type="button" variant="secondary" disabled={busy || cfg.mode === "PAID"} onClick={() => void change("PAID")}>Passer en PAID</Button>
           </div>
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+          <XfinChecklistView />
         </div>
       )}
     </Panel>
+  );
+}
+
+/* Checklist xFin non sensible (jamais de secret affiché) */
+function XfinChecklistView() {
+  const fetchChecklist = useServerFn(getXfinChecklist);
+  const [c, setC] = useState<XfinChecklist | null>(null);
+  useEffect(() => { void fetchChecklist().then(setC).catch(() => setC(null)); }, [fetchChecklist]);
+  if (!c) return null;
+  const ok = (v: string) => (["configurés", "configuré", "oui", "compatible"].includes(v) ? "live" : v === "inconnu" ? "muted" : "danger") as "live" | "muted" | "danger";
+  return (
+    <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+      <Chip tone={ok(c.credentials)}>Credentials : {c.credentials}</Chip>
+      <Chip tone={ok(c.appActive)}>Application active : {c.appActive}</Chip>
+      <Chip tone={ok(c.feeOwner)}>Fee owner : {c.feeOwner}</Chip>
+      <Chip tone={ok(c.webhookSecret)}>Secret webhook : {c.webhookSecret}</Chip>
+      {c.error && <Chip tone="danger">{c.error}</Chip>}
+    </div>
   );
 }
 

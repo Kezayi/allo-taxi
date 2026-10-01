@@ -855,7 +855,9 @@ export type Database = {
           payer_driver_id: string | null
           payer_msisdn: string | null
           provider: string
+          provider_completed_at: string | null
           provider_metadata: Json
+          provider_net_amount_fcfa: number | null
           refund_of_id: string | null
           resolved_at: string | null
           status: string
@@ -878,7 +880,9 @@ export type Database = {
           payer_driver_id?: string | null
           payer_msisdn?: string | null
           provider: string
+          provider_completed_at?: string | null
           provider_metadata?: Json
+          provider_net_amount_fcfa?: number | null
           refund_of_id?: string | null
           resolved_at?: string | null
           status?: string
@@ -901,7 +905,9 @@ export type Database = {
           payer_driver_id?: string | null
           payer_msisdn?: string | null
           provider?: string
+          provider_completed_at?: string | null
           provider_metadata?: Json
+          provider_net_amount_fcfa?: number | null
           refund_of_id?: string | null
           resolved_at?: string | null
           status?: string
@@ -1515,6 +1521,19 @@ export type Database = {
       ai_fail_document_analysis: {
         Args: { _document_id: string; _error_code: string }
         Returns: undefined
+      }
+      apply_xfin_transaction_update: {
+        Args: {
+          _amount: number
+          _completed_at: string
+          _fees: number
+          _net_amount: number
+          _source: string
+          _status: string
+          _transaction_type: string
+          _xfin_reference: string
+        }
+        Returns: Json
       }
       approve_driver: {
         Args: { _approve: boolean; _user_id: string }
