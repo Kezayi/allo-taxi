@@ -176,10 +176,10 @@ function VehicleForm({ vehicle, onSaved, onNotice }: { vehicle: OnboardingVehicl
     event.preventDefault();
     setBusy(true);
     const { error } = await supabase.rpc("upsert_my_vehicle", {
-      _vehicle_id: vehicle?.id ?? undefined,
-      _make: form.make || undefined,
+      ...(vehicle ? { _vehicle_id: vehicle.id } : {}),
+      ...(form.make ? { _make: form.make } : {}),
+      ...(form.color ? { _color: form.color } : {}),
       _model: form.model,
-      _color: form.color || undefined,
       _plate: form.plate,
       _has_ac: form.has_ac,
       _registered_seats: Number(form.registered_seats),
