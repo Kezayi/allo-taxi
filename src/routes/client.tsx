@@ -1,3 +1,4 @@
+import { CommonFooter } from "@/components/common-footer";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
