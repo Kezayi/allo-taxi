@@ -68,6 +68,7 @@ import {
   fetchSystemSettings,
   type SystemSettings,
 } from "@/components/admin/backoffice-modules";
+import { DriverDossiers } from "@/components/admin/driver-dossiers";
 
 export const Route = createFileRoute("/administration")({
   head: () => ({
@@ -357,6 +358,7 @@ function AdministrationDashboard() {
           </>
         )}
         {tab === "fleet" && <FleetManagement onNotice={setNotice} maskPhone={maskPhone} />}
+        {tab === "dossiers" && <DriverDossiers onNotice={setNotice} />}
         {tab === "dispatch" && <LiveDispatch timeoutMin={sysSettings.timeoutMin} />}
         {tab === "finance" && (
           <>
@@ -385,6 +387,7 @@ function AdministrationDashboard() {
 const adminTabs = [
   { id: "overview", label: "Vue d’ensemble" },
   { id: "fleet", label: "Flotte de chauffeurs" },
+  { id: "dossiers", label: "Dossiers chauffeurs" },
   { id: "dispatch", label: "Dispatch en direct" },
   { id: "finance", label: "Finances & Associés" },
   { id: "audit", label: "Registre d’Audit & Litiges" },

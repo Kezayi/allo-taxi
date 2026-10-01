@@ -1412,6 +1412,29 @@ export type Database = {
     }
     Functions: {
       activate_driver_day: { Args: never; Returns: string }
+      admin_get_driver_dossier: { Args: { _driver_id: string }; Returns: Json }
+      admin_list_driver_dossiers: {
+        Args: never
+        Returns: {
+          approved_docs: number
+          correction_docs: number
+          driver_id: string
+          driver_status: string
+          expired_docs: number
+          first_name: string
+          global_state: string
+          is_demo: boolean
+          last_name: string
+          onboarding_status: string
+          passenger_capacity: number
+          pending_docs: number
+          registered_seats: number
+          vehicle_id: string
+          vehicle_label: string
+          vehicle_plate: string
+          vehicle_validation: string
+        }[]
+      }
       approve_driver: {
         Args: { _approve: boolean; _user_id: string }
         Returns: undefined
@@ -1428,6 +1451,10 @@ export type Database = {
       claim_first_superadmin: { Args: never; Returns: boolean }
       close_ride: {
         Args: { _ride_id: string; _success: boolean }
+        Returns: string
+      }
+      compute_driver_onboarding_state: {
+        Args: { _driver_id: string }
         Returns: string
       }
       compute_eta: {
@@ -1630,6 +1657,10 @@ export type Database = {
         Returns: undefined
       }
       normalize_plate: { Args: { _plate: string }; Returns: string }
+      refresh_driver_onboarding_status: {
+        Args: { _driver_id: string }
+        Returns: string
+      }
       register_my_document: {
         Args: {
           _doc_type: string
@@ -1644,6 +1675,14 @@ export type Database = {
         Returns: Json
       }
       reset_demo_data: { Args: never; Returns: undefined }
+      review_driver_document: {
+        Args: { _decision: string; _document_id: string; _reason?: string }
+        Returns: Json
+      }
+      review_driver_vehicle: {
+        Args: { _decision: string; _reason?: string; _vehicle_id: string }
+        Returns: Json
+      }
       ride_same_direction: {
         Args: {
           a: Database["public"]["Tables"]["rides"]["Row"]

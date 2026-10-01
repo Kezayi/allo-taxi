@@ -29,6 +29,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { DriverOnboarding } from "@/components/driver/onboarding";
 import { useSession } from "@/hooks/use-session";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -114,6 +115,7 @@ function DriverWorkspace() {
   const [notice, setNotice] = useState<string | null>(null);
   const [offers, setOffers] = useState<RideOffer[]>([]);
   const [busy, setBusy] = useState(false);
+  const [view, setView] = useState<"poste" | "dossier">("poste");
 
   const isApproved = driver?.status === "approved" && roles.includes("chauffeur");
 
@@ -287,7 +289,9 @@ function DriverWorkspace() {
   );
 
   let body: React.ReactNode;
-  if (loading || (user && driver === undefined)) {
+  if (user && driver && view === "dossier") {
+    body = <DriverOnboarding userId={user.id} onNotice={setNotice} />;
+  } else if (loading || (user && driver === undefined)) {
     body = <GateCard icon={<RefreshCw className="size-7 animate-spin" />} title="Chargement de votre poste…" />;
   } else if (!user) {
     body = <GateCard icon={<ShieldCheck className="size-7" />} title="Connectez-vous pour conduire." text="Votre compte chauffeur sécurise vos courses et votre abonnement du jour."><Button asChild className="mt-6 h-12 w-full font-bold shadow-gold"><Link to="/connexion" search={{ retour: "/chauffeur" }}>Se connecter</Link></Button></GateCard>;
@@ -345,6 +349,16 @@ function DriverWorkspace() {
           <div className="mt-5 flex items-center gap-3 rounded-md border border-live/30 bg-live/10 px-4 py-3 text-sm text-live" role="status">
             <CheckCircle2 className="size-4 shrink-0" />{notice}
           </div>
+        )}
+        {user && driver && (
+          <nav aria-label="Sections chauffeur" className="mt-5 flex gap-2 rounded-md border border-border bg-secondary/60 p-1">
+            {([["poste", "Poste de conduite"], ["dossier", "Mon dossier"]] as const).map(([id, label]) => (
+              <button key={id} type="button" onClick={() => setView(id)} aria-current={view === id}
+                className={cn("h-10 flex-1 rounded-md text-xs font-semibold transition-colors", view === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
+                {label}
+              </button>
+            ))}
+          </nav>
         )}
         {body}
       </div>

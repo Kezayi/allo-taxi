@@ -197,6 +197,13 @@
       "when": 1790848120151,
       "tag": "0027_lot2a_driver_onboarding_backend",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790848774268,
+      "tag": "0028_lot2b_human_review_and_immutable_files",
+      "breakpoints": true
     }
   ]
 }
