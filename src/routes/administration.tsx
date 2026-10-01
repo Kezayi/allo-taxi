@@ -68,6 +68,7 @@ import {
   fetchSystemSettings,
   type SystemSettings,
 } from "@/components/admin/backoffice-modules";
+import { DriverDossiers } from "@/components/admin/driver-dossiers";
 
 export const Route = createFileRoute("/administration")({
   head: () => ({
