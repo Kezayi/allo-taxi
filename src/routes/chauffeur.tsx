@@ -114,6 +114,7 @@ function DriverWorkspace() {
   const [notice, setNotice] = useState<string | null>(null);
   const [offers, setOffers] = useState<RideOffer[]>([]);
   const [busy, setBusy] = useState(false);
+  const [view, setView] = useState<"poste" | "dossier">("poste");
 
   const isApproved = driver?.status === "approved" && roles.includes("chauffeur");
 
