@@ -48,22 +48,25 @@ export function OverviewStats() {
   const [s, setS] = useState({ drivers: 0, online: 0, pendingDrivers: 0, pendingRides: 0, negotiating: 0, completedToday: 0 });
   useEffect(() => {
     const since = new Date(); since.setHours(0, 0, 0, 0);
+    // Compteurs de courses : projection serveur workflow-aware (legacy + V1), plus de lecture directe de la table des courses
     void Promise.all([
       supabase.from("drivers").select("user_id", { count: "exact", head: true }).eq("status", "approved"),
       supabase.from("drivers").select("user_id", { count: "exact", head: true }).eq("status", "approved").eq("is_online", true).eq("is_active", true),
       supabase.from("drivers").select("user_id", { count: "exact", head: true }).eq("status", "pending"),
-      supabase.from("rides").select("id", { count: "exact", head: true }).eq("status", "pending"),
-      supabase.from("rides").select("id", { count: "exact", head: true }).eq("status", "negotiating"),
+      supabase.rpc("admin_list_live_rides"),
       supabase.from("ride_logs").select("id", { count: "exact", head: true }).eq("resolution_status", "completed").gte("resolved_at", since.toISOString()),
-    ]).then(([a, b, c, d, e, f]) => setS({ drivers: a.count ?? 0, online: b.count ?? 0, pendingDrivers: c.count ?? 0, pendingRides: d.count ?? 0, negotiating: e.count ?? 0, completedToday: f.count ?? 0 }));
+    ]).then(([a, b, c, live, f]) => {
+      const rows = ((live.data ?? []) as unknown as LiveRide[]);
+      setS({ drivers: a.count ?? 0, online: b.count ?? 0, pendingDrivers: c.count ?? 0, pendingRides: rows.filter((r) => phaseOf(r) === "waiting").length, negotiating: rows.filter((r) => phaseOf(r) === "contact").length, completedToday: f.count ?? 0 });
+    });
   }, []);
   const items = [
     { label: "Chauffeurs validés", value: s.drivers, icon: <CarFront className="size-4" /> },
     { label: "En ligne maintenant", value: s.online, icon: <Radio className="size-4 text-live" /> },
     { label: "Dossiers à valider", value: s.pendingDrivers, icon: <ShieldCheck className="size-4" /> },
     { label: "Courses en attente", value: s.pendingRides, icon: <Clock3 className="size-4" /> },
-    { label: "En négociation", value: s.negotiating, icon: <Users className="size-4" /> },
-    { label: "Embarquements aujourd’hui", value: s.completedToday, icon: <ShieldCheck className="size-4 text-live" /> },
+    { label: "Mise en relation", value: s.negotiating, icon: <Users className="size-4" /> },
+    { label: "Courses legacy terminées aujourd’hui", value: s.completedToday, icon: <ShieldCheck className="size-4 text-live" /> },
   ];
   return (
     <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -133,19 +136,20 @@ export function FleetManagement({ onNotice, maskPhone }: { onNotice: Notice; mas
 }
 
 /* ---------------- Dispatch en direct ---------------- */
-type LiveRide = { id: string; client_name: string; pickup_location: string; dropoff_location: string; price_proposed: number; payment_method: string; wants_ac: boolean; status: string; chauffeur_id: string | null; started_negotiation_at: string | null; created_at: string };
+type LiveRide = { id: string; workflow_version: "legacy" | "v1"; is_demo: boolean; status: string; client_name: string; pickup_location: string; dropoff_location: string; price_proposed: number; price_final: number | null; payment_method: string; wants_ac: boolean; passenger_count: number | null; driver_label: string | null; since: string | null; created_at: string };
+type Phase = "waiting" | "contact" | "running";
+function phaseOf(r: LiveRide): Phase {
+  if (r.workflow_version === "legacy") return r.status === "pending" ? "waiting" : r.status === "negotiating" ? "contact" : "running";
+  return r.status === "PENDING" ? "waiting" : r.status === "CONTACT_PENDING" ? "contact" : "running";
+}
+const v1StatusLabels: Record<string, string> = { CONFIRMED: "Confirmée", DRIVER_EN_ROUTE: "Chauffeur en route", DRIVER_ARRIVED: "Chauffeur arrivé", ONBOARD: "À bord", onboard: "À bord" };
 
 export function LiveDispatch({ timeoutMin }: { timeoutMin: number }) {
   const [rides, setRides] = useState<LiveRide[]>([]);
-  const [names, setNames] = useState<Record<string, string>>({});
   const [, tick] = useState(0);
   const load = useCallback(async () => {
-    const [{ data }, { data: drivers }] = await Promise.all([
-      supabase.from("rides").select("id, client_name, pickup_location, dropoff_location, price_proposed, payment_method, wants_ac, status, chauffeur_id, started_negotiation_at, created_at").in("status", ["pending", "negotiating"]).order("created_at"),
-      supabase.from("drivers").select("user_id, first_name, vehicle_plate"),
-    ]);
-    setRides(data ?? []);
-    setNames(Object.fromEntries((drivers ?? []).map((d) => [d.user_id, `${d.first_name} · ${d.vehicle_plate}`])));
+    const { data } = await supabase.rpc("admin_list_live_rides");
+    setRides((data ?? []) as unknown as LiveRide[]);
   }, []);
   useEffect(() => {
     void load();
@@ -154,29 +158,37 @@ export function LiveDispatch({ timeoutMin }: { timeoutMin: number }) {
     return () => { window.clearInterval(refresh); window.clearInterval(clock); };
   }, [load]);
 
-  const pending = rides.filter((r) => r.status === "pending");
-  const nego = rides.filter((r) => r.status === "negotiating");
-  const late = nego.filter((r) => minutesSince(r.started_negotiation_at) >= timeoutMin);
+  const pending = rides.filter((r) => phaseOf(r) === "waiting");
+  const nego = rides.filter((r) => phaseOf(r) === "contact");
+  const running = rides.filter((r) => phaseOf(r) === "running");
+  // Le délai de négociation avec pénalité ne s'applique qu'aux courses legacy
+  const isOverdue = (r: LiveRide) => r.workflow_version === "legacy" && r.status === "negotiating" && minutesSince(r.since) >= timeoutMin;
+  const late = nego.filter(isOverdue);
 
   const card = (r: LiveRide) => {
-    const mins = minutesSince(r.status === "pending" ? r.created_at : r.started_negotiation_at);
-    const overdue = r.status === "negotiating" && mins >= timeoutMin;
+    const mins = minutesSince(r.since);
+    const overdue = isOverdue(r);
+    const phase = phaseOf(r);
     return (
       <div key={r.id} className={cn("rounded-md border bg-secondary/60 p-3", overdue ? "border-destructive/50" : "border-border")}>
-        <div className="flex items-center justify-between gap-2"><p className="truncate text-xs font-semibold">{r.pickup_location} → {r.dropoff_location}</p><span className="shrink-0 text-sm font-bold tabular-nums text-primary">{r.price_proposed.toLocaleString("fr-FR")} F</span></div>
-        <p className="mt-1 text-[11px] text-muted-foreground">{r.client_name} · {r.payment_method}{r.wants_ac ? " · ❄️" : ""}</p>
-        {r.chauffeur_id && <p className="mt-1 text-[11px] text-foreground">Chauffeur : {names[r.chauffeur_id] ?? "—"}</p>}
-        <p className={cn("mt-2 flex items-center gap-1 text-[10px] font-semibold uppercase", overdue ? "text-destructive" : "text-muted-foreground")}><Clock3 className="size-3" />{mins} min {r.status === "pending" ? "d’attente" : "de négociation"}{overdue && " — délai dépassé"}</p>
+        <div className="flex items-center justify-between gap-2"><p className="truncate text-xs font-semibold">{r.pickup_location} → {r.dropoff_location}</p><span className="shrink-0 text-sm font-bold tabular-nums text-primary">{(r.price_final ?? r.price_proposed).toLocaleString("fr-FR")} F</span></div>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          <Chip tone={r.workflow_version === "v1" ? "live" : "muted"}>{r.workflow_version === "v1" ? "V1" : "Legacy"}</Chip>{r.is_demo && <> <Chip tone="muted">Démo</Chip></>}{" "}
+          {r.client_name} · {r.payment_method}{r.passenger_count ? ` · ${r.passenger_count} pass.` : ""}{r.wants_ac ? " · ❄️" : ""}{r.price_final != null ? " · prix convenu" : ""}
+        </p>
+        {r.driver_label && <p className="mt-1 text-[11px] text-foreground">Chauffeur : {r.driver_label}</p>}
+        <p className={cn("mt-2 flex items-center gap-1 text-[10px] font-semibold uppercase", overdue ? "text-destructive" : "text-muted-foreground")}><Clock3 className="size-3" />{mins} min {phase === "waiting" ? "d’attente" : phase === "contact" ? "de mise en relation" : `· ${v1StatusLabels[r.status] ?? r.status}`}{overdue && " — délai dépassé"}</p>
       </div>
     );
   };
 
   return (
-    <Panel icon={<Radio className="size-4 text-live" />} title="Supervision · Dispatch en direct" subtitle={`Actualisation automatique · Délai de négociation : ${timeoutMin} min`} action={<Button size="sm" variant="outline" onClick={() => void load()}><RotateCcw className="size-3.5" />Actualiser</Button>}>
-      {late.length > 0 && <div className="mb-4 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert"><AlertTriangle className="size-4" />{late.length} négociation{late.length > 1 ? "s" : ""} au-delà du délai autorisé — elles seront remises dans le pool avec pénalité.</div>}
-      <div className="grid gap-4 md:grid-cols-2">
-        <div><p className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">En attente de prise en charge ({pending.length})</p><div className="space-y-2">{pending.length ? pending.map(card) : <p className="text-xs text-muted-foreground">Aucune demande en attente.</p>}</div></div>
-        <div><p className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">En cours de négociation ({nego.length})</p><div className="space-y-2">{nego.length ? nego.map(card) : <p className="text-xs text-muted-foreground">Aucune négociation en cours.</p>}</div></div>
+    <Panel icon={<Radio className="size-4 text-live" />} title="Supervision · Dispatch en direct" subtitle={`Actualisation automatique · Délai de négociation legacy : ${timeoutMin} min`} action={<Button size="sm" variant="outline" onClick={() => void load()}><RotateCcw className="size-3.5" />Actualiser</Button>}>
+      {late.length > 0 && <div className="mb-4 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert"><AlertTriangle className="size-4" />{late.length} négociation{late.length > 1 ? "s" : ""} legacy au-delà du délai autorisé — elles seront remises dans le pool avec pénalité.</div>}
+      <div className="grid gap-4 md:grid-cols-3">
+        <div><p className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">En attente de chauffeur ({pending.length})</p><div className="space-y-2">{pending.length ? pending.map(card) : <p className="text-xs text-muted-foreground">Aucune demande en attente.</p>}</div></div>
+        <div><p className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Mise en relation ({nego.length})</p><div className="space-y-2">{nego.length ? nego.map(card) : <p className="text-xs text-muted-foreground">Aucune mise en relation.</p>}</div></div>
+        <div><p className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Courses en cours ({running.length})</p><div className="space-y-2">{running.length ? running.map(card) : <p className="text-xs text-muted-foreground">Aucune course en cours.</p>}</div></div>
       </div>
     </Panel>
   );
