@@ -172,7 +172,7 @@ function DossierSheet({ driverId, onClose, onChanged, onNotice }: { driverId: st
     const reason = reasons[documentId]?.trim() ?? "";
     if (decision === "request_correction" && !reason) return onNotice("Indiquez le motif de la correction.");
     setBusy(documentId);
-    const { error } = await supabase.rpc("review_driver_document", { _document_id: documentId, _decision: decision, _reason: reason || undefined });
+    const { error } = await supabase.rpc("review_driver_document", { _document_id: documentId, _decision: decision, ...(reason ? { _reason: reason } : {}) });
     setBusy(null);
     if (error) return onNotice("Décision non enregistrée.");
     setReasons((current) => ({ ...current, [documentId]: "" }));
