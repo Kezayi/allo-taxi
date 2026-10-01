@@ -1,3 +1,4 @@
+import { CommonFooter } from "@/components/common-footer";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -235,6 +236,7 @@ function ClientJourney() {
           <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase text-live"><span className="size-2 rounded-full bg-live" />Libreville</span>
         </header>
         <div className="mt-7 animate-journey-in">{body}</div>
+        <CommonFooter />
       </div>
     </main>
   );
