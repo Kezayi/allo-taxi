@@ -94,17 +94,29 @@ type PersistedDriverState = {
   isOnline: boolean;
   airConditioning: boolean;
   activeRides: ActiveRide[];
-  v1Ride: V1Ride | null;
+  /** Courses V1 actives : plusieurs en cas de partage, chacune indépendante. */
+  v1Rides: V1Ride[];
+};
+
+/** État de partage calculé par le serveur (get_my_shared_state_v1). */
+type SharedState = {
+  passenger_capacity: number | null;
+  seats_engaged: number;
+  seats_onboard: number;
+  active_rides: number;
+  accepting_new_shared: boolean;
+  detour_threshold_set: boolean;
 };
 
 type DriverRow = { status: string; first_name: string; has_ac: boolean };
 
-const STORAGE_KEY = "allo-taxi-driver-workspace-v3";
-const MAX_SEATS = 3;
+const STORAGE_KEY = "allo-taxi-driver-workspace-v4";
+/** Compatibilité legacy uniquement (courses antérieures au LOT 4B). Jamais utilisé pour les courses V1. */
+const LEGACY_MAX_SEATS = 3;
 const POOL_REFRESH_MS = 10000;
 const ACTIVE_REFRESH_MS = 6000;
 
-const defaultState: PersistedDriverState = { accessActive: false, isOnline: false, airConditioning: true, activeRides: [], v1Ride: null };
+const defaultState: PersistedDriverState = { accessActive: false, isOnline: false, airConditioning: true, activeRides: [], v1Rides: [] };
 
 const registrationSchema = z.object({
   first_name: z.string().trim().min(2, "Prénom trop court.").max(40),
@@ -128,6 +140,14 @@ function friendlyError(message: string | undefined) {
   if (!message) return "Action impossible pour le moment.";
   if (message.includes("RIDE_UNAVAILABLE") || message.includes("déjà prise")) return "Cette course vient d’être prise par un autre chauffeur ou n’est plus disponible.";
   if (message.includes("DRIVER_ALREADY_ENGAGED")) return "Terminez d’abord votre course en cours.";
+  if (message.includes("SHARING_NOT_ALLOWED")) return "Partage impossible : un client n’a pas accepté le partage.";
+  if (message.includes("SHARED_WAIT_ONBOARD")) return "Embarquez d’abord votre premier client avant d’accepter un autre passager.";
+  if (message.includes("SHARED_CLOSED")) return "Vous avez fermé les nouvelles propositions partagées.";
+  if (message.includes("DIRECTION_INCOMPATIBLE")) return "Cette course n’est pas dans votre direction.";
+  if (message.includes("DETOUR_EXCEEDED")) return "Cette course impose un détour trop important.";
+  if (message.includes("SHARED_DETOUR_THRESHOLD_REQUIRED")) return "Le partage n’est pas encore ouvert par l’administration.";
+  if (message.includes("CAPACITY_EXCEEDED")) return "Places insuffisantes dans votre véhicule.";
+  if (message.includes("CAPACITY_UNKNOWN")) return "Capacité du véhicule non validée : partage impossible.";
   if (message.includes("RIDE_REQUIRES_AC")) return "Cette course demande un véhicule climatisé.";
   if (message.includes("DRIVER_OFFLINE")) return "Passez en ligne pour prendre une course.";
   if (message.includes("DAY_ACCESS_REQUIRED")) return "Activez votre accès du jour pour recevoir des courses.";
@@ -151,6 +171,7 @@ function DriverWorkspace() {
   const [busy, setBusy] = useState(false);
   const [ticket, setTicket] = useState<{ mode: "FREE" | "PAID"; price: number; xfin: boolean }>({ mode: "FREE", price: 1000, xfin: false });
   const [view, setView] = useState<"poste" | "dossier">("poste");
+  const [shared, setShared] = useState<SharedState | null>(null);
 
   const isApproved = driver?.status === "approved" && roles.includes("chauffeur");
 
@@ -196,10 +217,12 @@ function DriverWorkspace() {
     if (!data || data.status !== "approved") return;
     // Ticket journalier V1 : driver_day_passes est la seule référence (plus de lecture de subscriptions)
     // Courses en cours : projection serveur (plus de lecture directe de la table des courses)
-    const [{ data: access }, { data: current, error: currentError }] = await Promise.all([
+    const [{ data: access }, { data: current, error: currentError }, { data: sharedData, error: sharedError }] = await Promise.all([
       supabase.rpc("get_my_driver_day_access"),
       supabase.rpc("get_my_active_rides"),
+      supabase.rpc("get_my_shared_state_v1"),
     ]);
+    if (!sharedError && sharedData) setShared(sharedData as unknown as SharedState);
     const acc = (access ?? {}) as { access_valid?: boolean; ticket_mode?: string; ticket_price_fcfa?: number; xfin_configured?: boolean };
     const valid = Boolean(acc.access_valid);
     setTicket({ mode: acc.ticket_mode === "PAID" ? "PAID" : "FREE", price: acc.ticket_price_fcfa ?? 1000, xfin: Boolean(acc.xfin_configured) });
@@ -209,7 +232,7 @@ function DriverWorkspace() {
       airConditioning: data.has_ac,
       ...(valid ? {} : { isOnline: false }),
       ...(rows ? {
-        v1Ride: (rows.find((r) => r["workflow_version"] === "v1") as unknown as V1Ride | undefined) ?? null,
+        v1Rides: rows.filter((r) => r["workflow_version"] === "v1") as unknown as V1Ride[],
         activeRides: rows.filter((r) => r["workflow_version"] === "legacy").map((r) => ({
           id: String(r["ride_id"]), client: String(r["client_first_name"] ?? ""), phone: String(r["client_phone"] ?? ""), distance: null,
           pickup: String(r["pickup_location"]), destination: String(r["dropoff_location"]), payment: String(r["payment_method"] ?? ""),
@@ -241,15 +264,18 @@ function DriverWorkspace() {
   const negotiating = state.activeRides.find((ride) => ride.status === "negotiating") ?? null;
   const onboard = state.activeRides.filter((ride) => ride.status === "onboard");
   const anchorRide = state.activeRides.find((ride) => ride.anchor) ?? null;
-  // LOT 4B : pas de partage réel ; toute course en cours (legacy ou V1) suspend le pool.
-  const engaged = state.activeRides.length > 0 || state.v1Ride !== null;
+  const v1Rides = state.v1Rides ?? [];
+  const engaged = state.activeRides.length > 0 || v1Rides.length > 0;
+  // Le pool reste interrogé quand un partage est possible ; le serveur seul décide de la compatibilité.
+  const sharedPoolOpen = state.activeRides.length === 0 && v1Rides.length > 0 && v1Rides.some((r) => r.status === "ONBOARD") && v1Rides.every((r) => r.allow_sharing) && Boolean(shared?.accepting_new_shared);
+  const poolActive = (!engaged || sharedPoolOpen);
 
   useEffect(() => {
-    if (!isApproved || !state.accessActive || !state.isOnline || engaged || !networkOnline) return;
+    if (!isApproved || !state.accessActive || !state.isOnline || !poolActive || !networkOnline) return;
     void refreshPool();
     const interval = window.setInterval(() => void refreshPool(), POOL_REFRESH_MS);
     return () => window.clearInterval(interval);
-  }, [isApproved, networkOnline, refreshPool, state.accessActive, state.isOnline, engaged]);
+  }, [isApproved, networkOnline, refreshPool, state.accessActive, state.isOnline, poolActive]);
 
   // Course en cours : l'état serveur fait foi (le client peut confirmer, refuser ou annuler à tout moment)
   useEffect(() => {
@@ -258,17 +284,26 @@ function DriverWorkspace() {
     return () => window.clearInterval(interval);
   }, [isApproved, engaged, networkOnline, loadDriver]);
 
-  const prevV1 = useRef<{ id: string; status: V1Status } | null>(null);
+  const prevV1 = useRef<Map<string, V1Status> | null>(null);
   useEffect(() => {
     const prev = prevV1.current;
-    const cur = state.v1Ride;
-    if (prev && cur && prev.id === cur.ride_id && prev.status === "CONTACT_PENDING" && cur.status === "CONFIRMED") {
-      chimes.accepted();
-      setNotice("Le client a confirmé la course.");
+    const cur = new Map(v1Rides.map((r) => [r.ride_id, r.status] as const));
+    if (prev && hydrated) {
+      for (const [id, status] of cur) {
+        if (prev.get(id) === "CONTACT_PENDING" && status === "CONFIRMED") { chimes.accepted(); setNotice("Le client a confirmé la course."); }
+      }
+      for (const id of prev.keys()) if (!cur.has(id)) setNotice("Une course n’est plus active (terminée, annulée ou relâchée).");
     }
-    if (prev && hydrated && !cur && !state.activeRides.length) setNotice("La course n’est plus active (terminée, annulée ou relâchée).");
-    prevV1.current = cur ? { id: cur.ride_id, status: cur.status } : null;
-  }, [state.v1Ride, state.activeRides.length, hydrated]);
+    prevV1.current = cur;
+  }, [v1Rides, hydrated]);
+
+  async function toggleAcceptingShared(on: boolean) {
+    setShared((s) => (s ? { ...s, accepting_new_shared: on } : s));
+    const { error } = await supabase.rpc("set_accepting_new_shared_v1", { _on: on });
+    if (error) setNotice(friendlyError(error.message));
+    else setNotice(on ? "Nouveaux passagers partagés acceptés." : "Nouvelles propositions partagées fermées. Vos courses continuent.");
+    await loadDriver();
+  }
 
   // Position partagée toutes les 20 s pendant une course : alimente le temps d'arrivée affiché au client
   const lockedId = negotiating?.id;
@@ -390,18 +425,25 @@ function DriverWorkspace() {
 
         <div className={cn("mt-5 space-y-5 transition duration-700", !state.accessActive && "pointer-events-none select-none blur-md")} aria-hidden={!state.accessActive}>
           <ActivationDashboard state={state} onPatch={(update) => void updateAvailability(update)} />
-          {state.v1Ride ? (
-            <V1RideScreen
-              ride={state.v1Ride}
-              busy={busy}
-              onAdvance={(action, success) => void runV1(() => supabase.rpc("advance_ride_v1", { _ride_id: state.v1Ride!.ride_id, _action: action }), success)}
-              onRelease={(reason) => void runV1(() => supabase.rpc("release_ride_v1", { _ride_id: state.v1Ride!.ride_id, _reason: reason as unknown as string }), "Course relâchée : elle retourne aux autres chauffeurs.")}
-              onCancel={(reason) => void runV1(() => supabase.rpc("cancel_ride_by_driver_v1", { _ride_id: state.v1Ride!.ride_id, _reason: reason }), "Course annulée. Le client est informé sur son écran.")}
-            />
+          {v1Rides.length > 0 ? (
+            <>
+              <SharedPanel rides={v1Rides} shared={shared} onToggle={(on) => void toggleAcceptingShared(on)} />
+              {v1Rides.map((ride) => (
+                <V1RideScreen
+                  key={ride.ride_id}
+                  ride={ride}
+                  busy={busy}
+                  onAdvance={(action, success) => void runV1(() => supabase.rpc("advance_ride_v1", { _ride_id: ride.ride_id, _action: action }), success)}
+                  onRelease={(reason) => void runV1(() => supabase.rpc("release_ride_v1", { _ride_id: ride.ride_id, _reason: reason as unknown as string }), "Course relâchée : elle retourne aux autres chauffeurs.")}
+                  onCancel={(reason) => void runV1(() => supabase.rpc("cancel_ride_by_driver_v1", { _ride_id: ride.ride_id, _reason: reason }), "Course annulée. Le client est informé sur son écran.")}
+                />
+              ))}
+              {sharedPoolOpen && state.isOnline && <RidePool offers={offers} airConditioning={state.airConditioning} busy={busy} shared onTake={(id) => void takeRide(id)} />}
+            </>
           ) : (
             <>
               {/* Compatibilité : course legacy acceptée avant la mise à jour, menée à son terme puis plus jamais proposée */}
-              {onboard.length > 0 && <OnboardPanel rides={onboard} anchor={anchorRide} seatsLeft={MAX_SEATS - state.activeRides.length} busy={busy} onDropOff={(id) => void dropOff(id)} />}
+              {onboard.length > 0 && <OnboardPanel rides={onboard} anchor={anchorRide} seatsLeft={LEGACY_MAX_SEATS - state.activeRides.length} busy={busy} onDropOff={(id) => void dropOff(id)} />}
               {negotiating ? (
                 <NegotiationScreen ride={negotiating} busy={busy} onFinish={(success) => void finishRide(success)} />
               ) : !state.isOnline ? (
@@ -641,6 +683,41 @@ function NegotiationScreen({ ride, busy, onFinish }: { ride: RideOffer; busy: bo
             <Button type="button" disabled={busy} onClick={() => onFinish(true)} className="min-h-12 whitespace-normal bg-live text-xs font-bold text-foreground hover:bg-live/90"><CheckCircle2 />Embarqué — Course validée</Button>
           </div>
         </div>
+      </div>
+    </section>
+  );
+}
+
+/** Taxi partagé V1 : places engagées / capacité homologuée et interrupteur des nouvelles propositions. */
+function SharedPanel({ rides, shared, onToggle }: { rides: V1Ride[]; shared: SharedState | null; onToggle: (on: boolean) => void }) {
+  const allSharing = rides.every((r) => r.allow_sharing);
+  const hasOnboard = rides.some((r) => r.status === "ONBOARD");
+  const cap = shared?.passenger_capacity ?? null;
+  const reason = !allSharing
+    ? "Un client n’a pas accepté le partage : aucune autre course jusqu’à sa dépose."
+    : !hasOnboard
+      ? "Le partage s’ouvre une fois le premier client à bord."
+      : cap == null
+        ? "Capacité du véhicule non validée : partage indisponible."
+        : shared && !shared.detour_threshold_set
+          ? "Partage pas encore ouvert par l’administration."
+          : "Seules les courses compatibles avec votre trajet vous sont proposées.";
+  return (
+    <section className="glass-panel p-5 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase text-primary">{rides.length > 1 ? `${rides.length} courses en cours` : "Course en cours"}</p>
+          <p className="mt-1 text-sm">
+            Places engagées : <strong>{shared?.seats_engaged ?? "—"}</strong>{cap != null ? ` / ${cap}` : ""} · à bord : <strong>{shared?.seats_onboard ?? "—"}</strong>
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{reason}</p>
+        </div>
+        {allSharing && (
+          <label className="flex items-center gap-3 text-xs">
+            <span>Accepter d’autres passagers</span>
+            <Switch checked={Boolean(shared?.accepting_new_shared)} onCheckedChange={onToggle} aria-label="Accepter de nouveaux passagers partagés" />
+          </label>
+        )}
       </div>
     </section>
   );

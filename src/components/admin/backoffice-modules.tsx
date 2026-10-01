@@ -144,12 +144,16 @@ function phaseOf(r: LiveRide): Phase {
 }
 const v1StatusLabels: Record<string, string> = { CONFIRMED: "Confirmée", DRIVER_EN_ROUTE: "Chauffeur en route", DRIVER_ARRIVED: "Chauffeur arrivé", ONBOARD: "À bord", onboard: "À bord" };
 
+type DriverLoad = { first_name: string; vehicle_plate: string; active_rides: number; seats_engaged: number; seats_onboard: number; passenger_capacity: number | null; accepting_new_shared: boolean | null };
+
 export function LiveDispatch({ timeoutMin }: { timeoutMin: number }) {
   const [rides, setRides] = useState<LiveRide[]>([]);
+  const [loads, setLoads] = useState<DriverLoad[]>([]);
   const [, tick] = useState(0);
   const load = useCallback(async () => {
-    const { data } = await supabase.rpc("admin_list_live_rides");
+    const [{ data }, { data: loadData }] = await Promise.all([supabase.rpc("admin_list_live_rides"), supabase.rpc("admin_list_driver_loads_v1")]);
     setRides((data ?? []) as unknown as LiveRide[]);
+    setLoads((loadData ?? []) as unknown as DriverLoad[]);
   }, []);
   useEffect(() => {
     void load();
@@ -190,6 +194,18 @@ export function LiveDispatch({ timeoutMin }: { timeoutMin: number }) {
         <div><p className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Mise en relation ({nego.length})</p><div className="space-y-2">{nego.length ? nego.map(card) : <p className="text-xs text-muted-foreground">Aucune mise en relation.</p>}</div></div>
         <div><p className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Courses en cours ({running.length})</p><div className="space-y-2">{running.length ? running.map(card) : <p className="text-xs text-muted-foreground">Aucune course en cours.</p>}</div></div>
       </div>
+      {loads.length > 0 && (
+        <div className="mt-4 border-t border-border pt-3">
+          <p className="mb-2 text-[10px] font-semibold uppercase text-muted-foreground">Charge des véhicules (V1)</p>
+          <div className="space-y-1">
+            {loads.map((l) => (
+              <p key={l.vehicle_plate + l.first_name} className="text-[11px]">
+                {l.first_name} · {l.vehicle_plate} — {l.active_rides} course{l.active_rides > 1 ? "s" : ""} · places {l.seats_engaged}{l.passenger_capacity != null ? ` / ${l.passenger_capacity}` : " / capacité non validée"} (à bord {l.seats_onboard}) · partage {l.accepting_new_shared ? "ouvert" : "fermé"}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
     </Panel>
   );
 }

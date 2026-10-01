@@ -267,6 +267,13 @@
       "when": 1790876041503,
       "tag": "0037_lot4_client_phone_normalization",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790876889327,
+      "tag": "0038_lot5_shared_rides_v1",
+      "breakpoints": true
     }
   ]
 }
