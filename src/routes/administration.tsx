@@ -386,6 +386,7 @@ function AdministrationDashboard() {
 const adminTabs = [
   { id: "overview", label: "Vue d’ensemble" },
   { id: "fleet", label: "Flotte de chauffeurs" },
+  { id: "dossiers", label: "Dossiers chauffeurs" },
   { id: "dispatch", label: "Dispatch en direct" },
   { id: "finance", label: "Finances & Associés" },
   { id: "audit", label: "Registre d’Audit & Litiges" },
