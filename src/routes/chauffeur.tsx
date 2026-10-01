@@ -328,6 +328,22 @@ function DriverWorkspace() {
     return () => window.clearInterval(interval);
   }, [lockedId, networkOnline]);
 
+  // LOT 7 : heartbeat de présence (position courante uniquement, aucun historique) toutes les 30 s
+  // quand l'écran est actif. Une PWA ne garantit pas l'envoi en arrière-plan ; un échec GPS
+  // n'interrompt jamais une course engagée.
+  const presenceActive = isApproved && networkOnline && (state.isOnline || engaged);
+  useEffect(() => {
+    if (!presenceActive || !("geolocation" in navigator)) return;
+    const send = () => navigator.geolocation.getCurrentPosition(
+      (pos) => { void supabase.rpc("update_driver_presence_v1", { _lat: pos.coords.latitude, _lng: pos.coords.longitude, _accuracy_m: pos.coords.accuracy, _heading_deg: pos.coords.heading ?? undefined, _position_at: new Date(pos.timestamp).toISOString() }); },
+      () => undefined,
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 },
+    );
+    send();
+    const interval = window.setInterval(send, 30_000);
+    return () => window.clearInterval(interval);
+  }, [presenceActive]);
+
   async function updateAvailability(update: Partial<Pick<PersistedDriverState, "isOnline" | "airConditioning">>) {
     const next = { isOnline: update.isOnline ?? state.isOnline, airConditioning: update.airConditioning ?? state.airConditioning };
     patchState(next);

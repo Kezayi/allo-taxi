@@ -69,7 +69,7 @@ import {
   type SystemSettings,
 } from "@/components/admin/backoffice-modules";
 import { DriverDossiers } from "@/components/admin/driver-dossiers";
-import { DashboardV1, FinanceV1, RestrictionsAuditV1, RidesRegisterV1 } from "@/components/admin/lot6-modules";
+import { DashboardV1, DriverPresenceV1, FinanceV1, RestrictionsAuditV1, RidesRegisterV1 } from "@/components/admin/lot6-modules";
 
 export const Route = createFileRoute("/administration")({
   head: () => ({
@@ -353,7 +353,7 @@ function AdministrationDashboard() {
       <div key={`${tab}-${dataVersion}`} className="animate-journey-in">
         {tab === "overview" && (
           <>
-            {role === "super_admin" ? <DashboardV1 /> : <OverviewStats />}
+            {role === "super_admin" ? <><DashboardV1 /><DriverPresenceV1 /></> : <OverviewStats />}
             {role !== "super_admin" && <FinancialOverview role={role} share={currentShare} finance={finance} dailyPrice={sysSettings.dailyPrice} />}
             <DemoDataControls onNotice={setNotice} onChanged={() => { setDataVersion((v) => v + 1); void loadData(); }} />
           </>
