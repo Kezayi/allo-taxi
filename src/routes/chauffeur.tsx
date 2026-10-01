@@ -49,6 +49,8 @@ export const Route = createFileRoute("/chauffeur")({
 });
 
 type Payment = string;
+const paymentLabels: Record<string, string> = { CASH: "Espèces", AIRTEL_MONEY: "Airtel Money", MOOV_MONEY: "Moov Money" };
+const paymentLabel = (p: string) => paymentLabels[p] ?? p;
 
 type RideOffer = {
   id: string;
@@ -60,15 +62,39 @@ type RideOffer = {
   payment: Payment;
   airConditioning: boolean;
   price: number;
+  landmark?: string | null;
+  dropoffNote?: string | null;
+  passengers?: number | null;
+  sharing?: boolean;
 };
 
+/** Course legacy publiée avant LOT 4B : conservée uniquement pour être menée à son terme. */
 type ActiveRide = RideOffer & { status: "negotiating" | "onboard"; sharing: boolean; anchor: boolean };
+
+type V1Status = "CONTACT_PENDING" | "CONFIRMED" | "DRIVER_EN_ROUTE" | "DRIVER_ARRIVED" | "ONBOARD";
+/** Course V1 en cours : projection serveur get_my_active_rides, sans téléphone du client. */
+type V1Ride = {
+  ride_id: string;
+  status: V1Status;
+  client_first_name: string;
+  pickup_location: string;
+  pickup_landmark: string | null;
+  dropoff_location: string;
+  dropoff_note: string | null;
+  passenger_count: number | null;
+  wants_ac: boolean;
+  allow_sharing: boolean;
+  payment_method: string | null;
+  price_proposed: number;
+  price_final: number | null;
+};
 
 type PersistedDriverState = {
   accessActive: boolean;
   isOnline: boolean;
   airConditioning: boolean;
   activeRides: ActiveRide[];
+  v1Ride: V1Ride | null;
 };
 
 type DriverRow = { status: string; first_name: string; has_ac: boolean };
@@ -76,8 +102,9 @@ type DriverRow = { status: string; first_name: string; has_ac: boolean };
 const STORAGE_KEY = "allo-taxi-driver-workspace-v3";
 const MAX_SEATS = 3;
 const POOL_REFRESH_MS = 10000;
+const ACTIVE_REFRESH_MS = 6000;
 
-const defaultState: PersistedDriverState = { accessActive: false, isOnline: false, airConditioning: true, activeRides: [] };
+const defaultState: PersistedDriverState = { accessActive: false, isOnline: false, airConditioning: true, activeRides: [], v1Ride: null };
 
 const registrationSchema = z.object({
   first_name: z.string().trim().min(2, "Prénom trop court.").max(40),
@@ -99,7 +126,14 @@ function getPosition(): Promise<{ lat: number; lng: number } | null> {
 
 function friendlyError(message: string | undefined) {
   if (!message) return "Action impossible pour le moment.";
-  if (message.includes("déjà prise")) return "Cette course vient d’être prise par un autre chauffeur.";
+  if (message.includes("RIDE_UNAVAILABLE") || message.includes("déjà prise")) return "Cette course vient d’être prise par un autre chauffeur ou n’est plus disponible.";
+  if (message.includes("DRIVER_ALREADY_ENGAGED")) return "Terminez d’abord votre course en cours.";
+  if (message.includes("RIDE_REQUIRES_AC")) return "Cette course demande un véhicule climatisé.";
+  if (message.includes("DRIVER_OFFLINE")) return "Passez en ligne pour prendre une course.";
+  if (message.includes("DAY_ACCESS_REQUIRED")) return "Activez votre accès du jour pour recevoir des courses.";
+  if (message.includes("DOCUMENTS") || message.includes("ELIGIB")) return "Votre dossier doit être complété avant de prendre des courses.";
+  if (message.includes("REASON_REQUIRED")) return "Indiquez un motif d’au moins 3 caractères.";
+  if (message.includes("NOT_ALLOWED") || message.includes("NOT_ASSIGNED")) return "Action impossible : la course a changé d’état.";
   if (message.includes("Abonnement")) return "Activez votre journée pour recevoir des courses.";
   if (message.includes("TRAJET_VERROUILLE")) return message.split("TRAJET_VERROUILLE: ")[1] ? `Trajet verrouillé : ${message.split("TRAJET_VERROUILLE: ")[1]}.` : "Trajet verrouillé.";
   if (message.includes("Clôturez")) return "Clôturez d’abord votre course en cours.";
