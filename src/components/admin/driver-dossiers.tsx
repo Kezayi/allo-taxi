@@ -187,7 +187,7 @@ function DossierSheet({ driverId, onClose, onChanged, onNotice }: { driverId: st
     const reason = reasons[key]?.trim() ?? "";
     if (decision === "request_correction" && !reason) return onNotice("Indiquez le motif de la correction.");
     setBusy(key);
-    const { error } = await supabase.rpc("review_driver_vehicle", { _vehicle_id: detail.vehicle.id, _decision: decision, _reason: reason || undefined });
+    const { error } = await supabase.rpc("review_driver_vehicle", { _vehicle_id: detail.vehicle.id, _decision: decision, ...(reason ? { _reason: reason } : {}) });
     setBusy(null);
     if (error) {
       if (error.message.includes("SEATS_MISSING")) return onNotice("Renseignez les places homologuées avant de valider.");
