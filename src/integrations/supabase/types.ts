@@ -1220,10 +1220,12 @@ export type Database = {
           dropoff_lat: number | null
           dropoff_lng: number | null
           dropoff_location: string
+          dropoff_note: string | null
           id: string
           is_demo: boolean
           passenger_count: number | null
           payment_method: string
+          pickup_landmark: string | null
           pickup_lat: number | null
           pickup_lng: number | null
           pickup_location: string
@@ -1238,6 +1240,7 @@ export type Database = {
           updated_at: string
           vehicle_id: string | null
           wants_ac: boolean
+          workflow_version: string
         }
         Insert: {
           access_token?: string | null
@@ -1253,10 +1256,12 @@ export type Database = {
           dropoff_lat?: number | null
           dropoff_lng?: number | null
           dropoff_location: string
+          dropoff_note?: string | null
           id?: string
           is_demo?: boolean
           passenger_count?: number | null
           payment_method: string
+          pickup_landmark?: string | null
           pickup_lat?: number | null
           pickup_lng?: number | null
           pickup_location: string
@@ -1271,6 +1276,7 @@ export type Database = {
           updated_at?: string
           vehicle_id?: string | null
           wants_ac?: boolean
+          workflow_version?: string
         }
         Update: {
           access_token?: string | null
@@ -1286,10 +1292,12 @@ export type Database = {
           dropoff_lat?: number | null
           dropoff_lng?: number | null
           dropoff_location?: string
+          dropoff_note?: string | null
           id?: string
           is_demo?: boolean
           passenger_count?: number | null
           payment_method?: string
+          pickup_landmark?: string | null
           pickup_lat?: number | null
           pickup_lng?: number | null
           pickup_location?: string
@@ -1304,6 +1312,7 @@ export type Database = {
           updated_at?: string
           vehicle_id?: string | null
           wants_ac?: boolean
+          workflow_version?: string
         }
         Relationships: [
           {
@@ -1514,6 +1523,10 @@ export type Database = {
           vehicle_validation: string
         }[]
       }
+      advance_ride_v1: {
+        Args: { _action: string; _ride_id: string }
+        Returns: Json
+      }
       ai_complete_document_analysis: {
         Args: { _document_id: string; _model: string; _result: Json }
         Returns: Json
@@ -1547,9 +1560,17 @@ export type Database = {
         Args: { _lat1: number; _lat2: number; _lng1: number; _lng2: number }
         Returns: number
       }
+      cancel_ride_by_driver_v1: {
+        Args: { _reason: string; _ride_id: string }
+        Returns: Json
+      }
       cancel_ride_public: {
         Args: { _ride_id: string; _token: string }
         Returns: boolean
+      }
+      cancel_ride_v1: {
+        Args: { _ride_id: string; _token: string }
+        Returns: Json
       }
       check_and_purge_negotiation_timeouts: { Args: never; Returns: number }
       claim_first_superadmin: { Args: never; Returns: boolean }
@@ -1569,6 +1590,10 @@ export type Database = {
         Args: { _lat1: number; _lat2: number; _lng1: number; _lng2: number }
         Returns: Record<string, unknown>
       }
+      confirm_ride_after_contact_v1: {
+        Args: { _final_price: number; _ride_id: string; _token: string }
+        Returns: Json
+      }
       create_ride_public: {
         Args: {
           _allow_sharing: boolean
@@ -1586,6 +1611,27 @@ export type Database = {
         }
         Returns: {
           id: string
+          token: string
+        }[]
+      }
+      create_ride_public_v1: {
+        Args: {
+          _allow_sharing: boolean
+          _client_name: string
+          _client_phone: string
+          _dropoff_location: string
+          _dropoff_note: string
+          _passenger_count: number
+          _payment_method: string
+          _pickup_landmark: string
+          _pickup_lat: number
+          _pickup_lng: number
+          _pickup_location: string
+          _price: number
+          _wants_ac: boolean
+        }
+        Returns: {
+          ride_id: string
           token: string
         }[]
       }
@@ -1613,10 +1659,12 @@ export type Database = {
           dropoff_lat: number | null
           dropoff_lng: number | null
           dropoff_location: string
+          dropoff_note: string | null
           id: string
           is_demo: boolean
           passenger_count: number | null
           payment_method: string
+          pickup_landmark: string | null
           pickup_lat: number | null
           pickup_lng: number | null
           pickup_location: string
@@ -1631,6 +1679,7 @@ export type Database = {
           updated_at: string
           vehicle_id: string | null
           wants_ac: boolean
+          workflow_version: string
         }
         SetofOptions: {
           from: "*"
@@ -1649,6 +1698,7 @@ export type Database = {
         Args: { _driver_id: string }
         Returns: Json
       }
+      expire_ride_v1: { Args: { _ride_id: string }; Returns: Json }
       export_full_ride_logs: {
         Args: never
         Returns: {
@@ -1720,6 +1770,23 @@ export type Database = {
       get_my_driver_day_access: { Args: never; Returns: Json }
       get_my_driver_onboarding: { Args: never; Returns: Json }
       get_onboarding_enforcement_status: { Args: never; Returns: Json }
+      get_pool_v1: {
+        Args: { _lat: number; _lng: number; _radius_km: number }
+        Returns: {
+          allow_sharing: boolean
+          created_at: string
+          distance_km: number
+          dropoff_location: string
+          dropoff_note: string
+          passenger_count: number
+          payment_method: string
+          pickup_landmark: string
+          pickup_location: string
+          price_proposed: number
+          ride_id: string
+          wants_ac: boolean
+        }[]
+      }
       get_public_activity: {
         Args: never
         Returns: {
@@ -1740,6 +1807,10 @@ export type Database = {
           vehicle_model: string
           vehicle_plate: string
         }[]
+      }
+      get_ride_status_v1: {
+        Args: { _ride_id: string; _token: string }
+        Returns: Json
       }
       get_ticket_config: { Args: never; Returns: Json }
       has_role: {
@@ -1780,6 +1851,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      mark_contact_failed_v1: {
+        Args: { _ride_id: string; _token: string }
+        Returns: Json
+      }
       normalize_plate: { Args: { _plate: string }; Returns: string }
       onboarding_enforcement_mode: { Args: never; Returns: string }
       refresh_driver_onboarding_status: {
@@ -1799,10 +1874,15 @@ export type Database = {
         }
         Returns: Json
       }
+      release_ride_v1: {
+        Args: { _reason?: string; _ride_id: string }
+        Returns: Json
+      }
       request_document_ai_analysis: {
         Args: { _document_id: string }
         Returns: Json
       }
+      reserve_ride_v1: { Args: { _ride_id: string }; Returns: Json }
       reset_demo_data: { Args: never; Returns: undefined }
       review_driver_document: {
         Args: { _decision: string; _document_id: string; _reason?: string }
@@ -1819,6 +1899,79 @@ export type Database = {
         }
         Returns: boolean
       }
+      ride_v1_assert_driver_ready: {
+        Args: { _uid: string }
+        Returns: undefined
+      }
+      ride_v1_by_token: {
+        Args: { _ride_id: string; _token: string }
+        Returns: {
+          access_token: string | null
+          access_token_hash: string
+          allow_sharing: boolean
+          anchor_ride_id: string | null
+          boarded_at: string | null
+          chauffeur_id: string | null
+          client_identity_id: string | null
+          client_name: string
+          client_phone: string
+          created_at: string
+          dropoff_lat: number | null
+          dropoff_lng: number | null
+          dropoff_location: string
+          dropoff_note: string | null
+          id: string
+          is_demo: boolean
+          passenger_count: number | null
+          payment_method: string
+          pickup_landmark: string | null
+          pickup_lat: number | null
+          pickup_lng: number | null
+          pickup_location: string
+          price_final: number | null
+          price_final_confirmed_at: string | null
+          price_proposed: number
+          resolved_at: string | null
+          started_negotiation_at: string | null
+          status: string
+          status_v2: string | null
+          status_v2_changed_at: string | null
+          updated_at: string
+          vehicle_id: string | null
+          wants_ac: boolean
+          workflow_version: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "rides"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      ride_v1_event: {
+        Args: {
+          _actor: string
+          _actor_type: string
+          _assignment: string
+          _from: string
+          _payload?: Json
+          _ride_id: string
+          _to: string
+          _type: string
+        }
+        Returns: undefined
+      }
+      ride_v1_legacy_status: { Args: { _s: string }; Returns: string }
+      ride_v1_payment_code: { Args: { _legacy: string }; Returns: string }
+      ride_v1_set_status: {
+        Args: { _ride_id: string; _to: string }
+        Returns: undefined
+      }
+      ride_v1_transition_allowed: {
+        Args: { _from: string; _to: string }
+        Returns: boolean
+      }
+      ride_v1_whatsapp_number: { Args: { _raw: string }; Returns: string }
       set_driver_active: {
         Args: { _active: boolean; _user_id: string }
         Returns: undefined
@@ -1873,6 +2026,7 @@ export type Database = {
         }
         Returns: Json
       }
+      url_encode: { Args: { _s: string }; Returns: string }
       xfin_integration_ready: { Args: never; Returns: boolean }
     }
     Enums: {
