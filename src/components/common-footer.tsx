@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
  * Numéro WhatsApp Administrateur : celui enregistré sur le compte Superadmin (+241 074 69 80 31),
  * au format canonique du projet (+241 + 8 chiffres). Surchargeable via VITE_ADMIN_WHATSAPP_PHONE (non secret).
  */
-const ADMIN_WHATSAPP = (import.meta.env.VITE_ADMIN_WHATSAPP_PHONE as string | undefined) ?? "+24174698031";
+const ADMIN_WHATSAPP = (import.meta.env['VITE_ADMIN_WHATSAPP_PHONE'] as string | undefined) ?? "+24174698031";
 const PUBLIC_URL = "https://allo-taxi.lovable.app";
 const SHARE_TEXT = "Allo Taxi..? — commandez un taxi à Libreville en un clic.";
 
