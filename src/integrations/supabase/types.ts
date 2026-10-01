@@ -1621,6 +1621,8 @@ export type Database = {
           _allow_sharing: boolean
           _client_name: string
           _client_phone: string
+          _dropoff_lat?: number
+          _dropoff_lng?: number
           _dropoff_location: string
           _dropoff_note: string
           _passenger_count: number
