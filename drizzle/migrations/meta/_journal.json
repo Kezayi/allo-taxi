@@ -239,6 +239,13 @@
       "when": 1790852750367,
       "tag": "0033_lot3b_day_ticket_v1_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790854607850,
+      "tag": "0034_lot3c_xfin_dormant_preparation",
+      "breakpoints": true
     }
   ]
 }
