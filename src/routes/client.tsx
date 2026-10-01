@@ -68,7 +68,7 @@ const formSchema = z.object({
   landmark: z.string().trim().max(120, "Le repère est trop long."),
   destination: z.string().trim().min(3, "Précisez votre destination.").max(120, "L’adresse est trop longue."),
   dropoffNote: z.string().trim().max(160, "L’indication est trop longue."),
-  passengers: z.number({ error: "Indiquez le nombre de passagers." }).int().min(1, "Indiquez le nombre de passagers.").max(8, "8 passagers maximum."),
+  passengers: z.number({ invalid_type_error: "Indiquez le nombre de passagers.", required_error: "Indiquez le nombre de passagers." }).int().min(1, "Indiquez le nombre de passagers.").max(8, "8 passagers maximum."),
   wantsAc: z.boolean(),
   shared: z.boolean(),
   payment: z.enum(["CASH", "AIRTEL_MONEY", "MOOV_MONEY"]),
