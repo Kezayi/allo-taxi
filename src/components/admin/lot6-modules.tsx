@@ -5,7 +5,9 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 type Notice = (text: string) => void;
-type Row = Record<string, unknown>;
+// Admin RPC payloads are server-shaped jsonb; fields are rendered defensively via s()/fcfa().
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = any;
 
 const fcfa = (n: unknown) => `${Number(n ?? 0).toLocaleString("fr-FR")} FCFA`;
 const dt = (v: unknown) => (v ? new Date(String(v)).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "—");
@@ -55,7 +57,7 @@ const errMsg = (m: string) => {
     SHARE_RULE_RETROACTIVE_START: "Une règle ne peut pas commencer dans le passé.",
   };
   const k = Object.keys(map).find((x) => m.includes(x));
-  return k ? map[k] : m;
+  return (k && map[k]) || m;
 };
 
 /* 1. Dashboard V1 */
