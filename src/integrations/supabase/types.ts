@@ -1523,6 +1523,7 @@ export type Database = {
           vehicle_validation: string
         }[]
       }
+      admin_list_driver_loads_v1: { Args: never; Returns: Json }
       admin_list_live_rides: { Args: never; Returns: Json }
       advance_ride_v1: {
         Args: { _action: string; _ride_id: string }
@@ -1771,6 +1772,7 @@ export type Database = {
       get_my_active_rides: { Args: never; Returns: Json }
       get_my_driver_day_access: { Args: never; Returns: Json }
       get_my_driver_onboarding: { Args: never; Returns: Json }
+      get_my_shared_state_v1: { Args: never; Returns: Json }
       get_onboarding_enforcement_status: { Args: never; Returns: Json }
       get_pool_v1: {
         Args: { _lat: number; _lng: number; _radius_km: number }
@@ -1902,6 +1904,13 @@ export type Database = {
         }
         Returns: boolean
       }
+      ride_shared_detour_km: {
+        Args: {
+          a: Database["public"]["Tables"]["rides"]["Row"]
+          c: Database["public"]["Tables"]["rides"]["Row"]
+        }
+        Returns: number
+      }
       ride_v1_assert_driver_ready: {
         Args: { _uid: string }
         Returns: undefined
@@ -1975,6 +1984,7 @@ export type Database = {
         Returns: boolean
       }
       ride_v1_whatsapp_number: { Args: { _raw: string }; Returns: string }
+      set_accepting_new_shared_v1: { Args: { _on: boolean }; Returns: Json }
       set_driver_active: {
         Args: { _active: boolean; _user_id: string }
         Returns: undefined
@@ -1993,7 +2003,12 @@ export type Database = {
       }
       set_shared_rides_enabled: { Args: { _on: boolean }; Returns: undefined }
       setting_num: { Args: { _default: number; _key: string }; Returns: number }
+      shared_detour_threshold_km: { Args: never; Returns: number }
       shared_rides_enabled: { Args: never; Returns: boolean }
+      shared_v1_rejection: {
+        Args: { _uid: string; c: Database["public"]["Tables"]["rides"]["Row"] }
+        Returns: string
+      }
       superadmin_exists: { Args: never; Returns: boolean }
       take_ride: {
         Args: { _ride_id: string }
