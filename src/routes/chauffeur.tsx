@@ -348,6 +348,16 @@ function DriverWorkspace() {
             <CheckCircle2 className="size-4 shrink-0" />{notice}
           </div>
         )}
+        {user && driver && (
+          <nav aria-label="Sections chauffeur" className="mt-5 flex gap-2 rounded-md border border-border bg-secondary/60 p-1">
+            {([["poste", "Poste de conduite"], ["dossier", "Mon dossier"]] as const).map(([id, label]) => (
+              <button key={id} type="button" onClick={() => setView(id)} aria-current={view === id}
+                className={cn("h-10 flex-1 rounded-md text-xs font-semibold transition-colors", view === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>
+                {label}
+              </button>
+            ))}
+          </nav>
+        )}
         {body}
       </div>
     </main>
