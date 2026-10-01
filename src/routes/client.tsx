@@ -63,7 +63,7 @@ const initialForm: RideForm = { firstName: "", phone: "", pickup: "", landmark: 
 
 const formSchema = z.object({
   firstName: z.string().trim().min(2, "Saisissez au moins 2 caractères.").max(40, "Le prénom est trop long."),
-  phone: z.string().trim().refine((v) => /^[0-9]{8,9}$/.test(v.replace(/[\s-]/g, "")), "Saisissez un numéro gabonais valide (8 ou 9 chiffres)."),
+  phone: z.string().trim().refine((v) => /^(?:\+?241|00241)?0?[1-9][0-9]{7}$/.test(v.replace(/[\s.\-()/]/g, "")), "Saisissez un numéro gabonais valide (ex. 074 12 34 56)."),
   pickup: z.string().trim().min(3, "Précisez votre point de départ.").max(120, "L’adresse est trop longue."),
   landmark: z.string().trim().max(120, "Le repère est trop long."),
   destination: z.string().trim().min(3, "Précisez votre destination.").max(120, "L’adresse est trop longue."),
@@ -266,7 +266,8 @@ function RequestScreen({ onCreated }: { onCreated: (s: Session) => void }) {
     const d = parsed.data;
     const { data, error } = await supabase.rpc("create_ride_public_v1", {
       _client_name: d.firstName,
-      _client_phone: `+241${d.phone.replace(/\D/g, "")}`,
+      // Normalisation canonique (+241 + 8 chiffres) faite côté serveur : source unique de vérité.
+      _client_phone: d.phone,
       _pickup_location: d.pickup,
       _pickup_landmark: d.landmark,
       _pickup_lat: (gps?.lat ?? null) as unknown as number,
