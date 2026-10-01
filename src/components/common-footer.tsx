@@ -51,7 +51,7 @@ export function CommonFooter() {
           </Button>
         </div>
       )}
-      <p className="text-[10px] text-muted-foreground">(c) copyrigt MNAV34CM-AKD-LBV-GN</p>
+      <p className="text-[10px] text-muted-foreground">(c) copyrigt MNAV37CM-AKD-LBV-GN - Octobre 2026</p>
     </footer>
   );
 }
