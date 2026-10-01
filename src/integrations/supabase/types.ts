@@ -1857,6 +1857,7 @@ export type Database = {
         Args: { _ride_id: string; _token: string }
         Returns: Json
       }
+      normalize_client_phone_ga: { Args: { _raw: string }; Returns: string }
       normalize_plate: { Args: { _plate: string }; Returns: string }
       onboarding_enforcement_mode: { Args: never; Returns: string }
       refresh_driver_onboarding_status: {

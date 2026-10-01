@@ -4,7 +4,7 @@
 - driver_documents/driver_document_checks: checks append-only so AI never overwrites a human decision.
 - driver_presence mirrors drivers; availability = online/offline/paused only; busy/shared computed from rides.
 - Money ≠ access: revenue only from payment_transactions status=success; driver_day_passes (one per driver per Libreville day) is access only; legacy subscriptions become FREE passes, never revenue.
-- client_identities: phone-keyed, no auth, no normalization, attached on ride INSERT; restrictions only in append-only client_restrictions; ride access still needs the per-ride token.
+- client_identities: phone-keyed on the canonical +241+8-digit form produced server-side by normalize_client_phone_ga in create_ride_public_v1 (legacy rows untouched), no auth, attached on ride INSERT; restrictions only in append-only client_restrictions; ride access still needs the per-ride token.
 - ride_assignments: history of drivers per ride, mirrored from rides.chauffeur_id/status (legacy master); one active per ride, none per driver (sharing), transitions guarded, never deleted, demo never mirrored so reset_demo_data stays unblocked.
 - ride_events: append-only business journal; ride-state events emitted from rides, assignment events from ride_assignments (no cross-trigger dependency); only provable events, legacy canceled = legacy_canceled_unknown, no PII in payload, demo never journaled; sort by occurred_at, id.
 - driver_restrictions: operational state distinct from penalties; active derived from dates (no status column), lift needs author+reason, lifted rows frozen, never deleted, penalty_id must be same non-demo driver, no auto-restriction from refusals, not yet read by any RPC.
