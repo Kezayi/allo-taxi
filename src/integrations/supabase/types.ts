@@ -1496,7 +1496,40 @@ export type Database = {
         Args: { _payment_msisdn?: string }
         Returns: Json
       }
+      admin_associate_shares_v1: { Args: never; Returns: Json }
+      admin_close_associate_rule_v1: {
+        Args: { _rule: string; _to: string }
+        Returns: undefined
+      }
+      admin_correct_price_final_v1: {
+        Args: { _new_price: number; _reason: string; _ride: string }
+        Returns: Json
+      }
+      admin_create_associate_rule_v1: {
+        Args: { _associate: string; _from: string; _percent: number }
+        Returns: string
+      }
+      admin_create_driver_restriction_v1: {
+        Args: {
+          _driver: string
+          _ends_at?: string
+          _reason: string
+          _type: string
+        }
+        Returns: string
+      }
+      admin_dashboard_v1: { Args: never; Returns: Json }
+      admin_finance_v1: { Args: never; Returns: Json }
+      admin_force_driver_offline_v1: {
+        Args: { _driver: string; _reason: string }
+        Returns: Json
+      }
       admin_get_driver_dossier: { Args: { _driver_id: string }; Returns: Json }
+      admin_lift_driver_restriction_v1: {
+        Args: { _reason: string; _restriction: string }
+        Returns: undefined
+      }
+      admin_list_audit_events_v1: { Args: { _limit?: number }; Returns: Json }
       admin_list_driver_ai_checks: {
         Args: { _driver_id: string }
         Returns: Json
@@ -1524,7 +1557,9 @@ export type Database = {
         }[]
       }
       admin_list_driver_loads_v1: { Args: never; Returns: Json }
+      admin_list_driver_restrictions_v1: { Args: never; Returns: Json }
       admin_list_live_rides: { Args: never; Returns: Json }
+      admin_list_rides_v1: { Args: { _limit?: number }; Returns: Json }
       advance_ride_v1: {
         Args: { _action: string; _ride_id: string }
         Returns: Json
@@ -1556,6 +1591,10 @@ export type Database = {
       }
       assert_driver_documents_gate: {
         Args: { _driver_id: string }
+        Returns: undefined
+      }
+      assert_driver_not_restricted_for_new_ride: {
+        Args: { _uid: string }
         Returns: undefined
       }
       bearing_deg: {
@@ -1692,6 +1731,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      driver_restriction_active: {
+        Args: { _driver: string; _type: string }
+        Returns: boolean
+      }
       driver_ticket_mode: { Args: never; Returns: string }
       drop_off_ride: { Args: { _ride_id: string }; Returns: string }
       enable_onboarding_enforcement: {
@@ -1731,6 +1774,17 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      finance_eligible_payments_v1: {
+        Args: never
+        Returns: {
+          amount_base_fcfa: number
+          amount_total_fcfa: number
+          fees_fcfa: number
+          id: string
+          paid_day: string
+          provider_net_amount_fcfa: number
+        }[]
       }
       financial_dashboard_split: {
         Args: never

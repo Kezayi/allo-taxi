@@ -281,6 +281,13 @@
       "when": 1790877831014,
       "tag": "0039_lot5_dropoff_coordinates",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790878490420,
+      "tag": "0040_lot6_backoffice_finance_audit",
+      "breakpoints": true
     }
   ]
 }

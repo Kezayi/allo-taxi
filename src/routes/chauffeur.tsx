@@ -147,6 +147,9 @@ function friendlyError(message: string | undefined) {
   if (message.includes("DETOUR_EXCEEDED")) return "Cette course impose un détour trop important.";
   if (message.includes("SHARED_DETOUR_THRESHOLD_REQUIRED")) return "Le partage n’est pas encore ouvert par l’administration.";
   if (message.includes("CAPACITY_EXCEEDED")) return "Places insuffisantes dans votre véhicule.";
+  if (message.includes("DRIVER_ACCESS_BLOCKED")) return "Accès suspendu par l’administration : vous pouvez terminer vos courses en cours.";
+  if (message.includes("DRIVER_POOL_BLOCKED")) return "Nouvelles courses suspendues par l’administration.";
+  if (message.includes("SHARED_BLOCKED")) return "Partage suspendu par l’administration.";
   if (message.includes("CAPACITY_UNKNOWN")) return "Capacité du véhicule non validée : partage impossible.";
   if (message.includes("RIDE_REQUIRES_AC")) return "Cette course demande un véhicule climatisé.";
   if (message.includes("DRIVER_OFFLINE")) return "Passez en ligne pour prendre une course.";
