@@ -115,6 +115,7 @@ function DriverWorkspace() {
   const [notice, setNotice] = useState<string | null>(null);
   const [offers, setOffers] = useState<RideOffer[]>([]);
   const [busy, setBusy] = useState(false);
+  const [ticket, setTicket] = useState<{ mode: "FREE" | "PAID"; price: number; xfin: boolean }>({ mode: "FREE", price: 1000, xfin: false });
   const [view, setView] = useState<"poste" | "dossier">("poste");
 
   const isApproved = driver?.status === "approved" && roles.includes("chauffeur");
@@ -159,15 +160,18 @@ function DriverWorkspace() {
     const { data } = await supabase.from("drivers").select("status, first_name, has_ac").eq("user_id", user.id).maybeSingle();
     setDriver(data ?? null);
     if (!data || data.status !== "approved") return;
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Libreville" }).format(new Date());
-    const [{ data: sub }, { data: current }] = await Promise.all([
-      supabase.from("subscriptions").select("id").eq("driver_id", user.id).eq("day", today).eq("status", "active").maybeSingle(),
+    // Ticket journalier V1 : driver_day_passes est la seule référence (plus de lecture de subscriptions)
+    const [{ data: access }, { data: current }] = await Promise.all([
+      supabase.rpc("get_my_driver_day_access"),
       supabase.from("rides").select("*").eq("chauffeur_id", user.id).in("status", ["negotiating", "onboard"]).order("started_negotiation_at"),
     ]);
+    const acc = (access ?? {}) as { access_valid?: boolean; ticket_mode?: string; ticket_price_fcfa?: number; xfin_configured?: boolean };
+    const valid = Boolean(acc.access_valid);
+    setTicket({ mode: acc.ticket_mode === "PAID" ? "PAID" : "FREE", price: acc.ticket_price_fcfa ?? 1000, xfin: Boolean(acc.xfin_configured) });
     patchState({
-      accessActive: Boolean(sub),
+      accessActive: valid,
       airConditioning: data.has_ac,
-      ...(sub ? {} : { isOnline: false }),
+      ...(valid ? {} : { isOnline: false }),
       activeRides: (current ?? []).map((row) => ({ id: row.id, client: row.client_name, phone: row.client_phone, distance: null, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed, status: row.status === "onboard" ? "onboard" as const : "negotiating" as const, sharing: row.allow_sharing, anchor: row.anchor_ride_id === null })),
     });
   }, [patchState, user]);
@@ -232,11 +236,14 @@ function DriverWorkspace() {
 
   async function activateDay() {
     setBusy(true);
-    const { error } = await supabase.rpc("activate_driver_day");
+    const { error } = await supabase.rpc("activate_my_driver_day_v1", { _payment_msisdn: null as unknown as string });
     setBusy(false);
-    if (error) return setNotice(friendlyError(error.message));
+    if (error) {
+      if (error.message.includes("XFIN_NOT_CONFIGURED")) return setNotice("Paiement du ticket indisponible pour le moment. Réessayez plus tard.");
+      return setNotice(friendlyError(error.message));
+    }
     patchState({ accessActive: true });
-    setNotice("Journée activée jusqu’à 23h59.");
+    setNotice("Accès actif jusqu’à minuit — aucun paiement requis.");
   }
 
   async function takeRide(id: string) {
@@ -324,10 +331,21 @@ function DriverWorkspace() {
           <div className="absolute inset-0 z-20 grid min-h-[560px] place-items-center bg-background/55 px-5 backdrop-blur-md">
             <div className="max-w-sm text-center">
               <div className="mx-auto grid size-14 place-items-center rounded-md border border-primary/30 bg-primary/10 text-primary"><ShieldCheck className="size-7" /></div>
-              <p className="mt-5 text-xs font-semibold uppercase text-primary">Journée non activée</p>
-              <h1 className="mt-2 text-2xl font-semibold">Activez votre accès pour recevoir des courses.</h1>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">Activation valable jusqu’à 23h59, même en cas de coupure momentanée.</p>
-              <Button type="button" disabled={busy} onClick={() => void activateDay()} className="mt-6 h-14 w-full text-sm font-bold shadow-gold"><Banknote />Activer ma journée — 1 000 FCFA via Xfin</Button>
+              {ticket.mode === "FREE" ? (
+                <>
+                  <p className="mt-5 text-xs font-semibold uppercase text-live">Accès journée offert</p>
+                  <h1 className="mt-2 text-2xl font-semibold">0 FCFA aujourd’hui</h1>
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">Aucun paiement requis. Accès valable jusqu’à minuit (heure de Libreville).</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">Tarif standard : {ticket.price.toLocaleString("fr-FR")} FCFA — non facturé aujourd’hui.</p>
+                  <Button type="button" disabled={busy} onClick={() => void activateDay()} className="mt-6 h-14 w-full text-sm font-bold shadow-gold"><ShieldCheck />Activer mon accès aujourd’hui</Button>
+                </>
+              ) : (
+                <>
+                  <p className="mt-5 text-xs font-semibold uppercase text-primary">Ticket journalier payant</p>
+                  <h1 className="mt-2 text-2xl font-semibold">Paiement indisponible pour le moment.</h1>
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">Le paiement en ligne n’est pas encore ouvert. Contactez l’administration.</p>
+                </>
+              )}
             </div>
           </div>
         )}
