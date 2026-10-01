@@ -68,8 +68,8 @@ async function request<T>(method: "GET" | "POST", path: string, opts: { query?: 
       res = await doFetch(url, {
         method,
         signal: ctrl.signal,
-        headers: { "X-App-Key": env.appKey, "X-App-Secret": env.appSecret, "Content-Type": "application/json", Accept: "application/json" },
-        body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+        headers: { "X-App-Key": env.appKey as string, "X-App-Secret": env.appSecret as string, "Content-Type": "application/json", Accept: "application/json" },
+        body: opts.body === undefined ? null : JSON.stringify(opts.body),
       });
     } catch {
       clearTimeout(timer);
