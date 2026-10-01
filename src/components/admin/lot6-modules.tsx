@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-type Notice = (n: { tone: "success" | "error"; text: string } | null) => void;
+type Notice = (text: string) => void;
 type Row = Record<string, unknown>;
 
 const fcfa = (n: unknown) => `${Number(n ?? 0).toLocaleString("fr-FR")} FCFA`;
@@ -87,8 +87,8 @@ export function RidesRegisterV1({ onNotice }: { onNotice: Notice }) {
   const [reason, setReason] = useState("");
   const submit = async (id: string) => {
     const { error } = await supabase.rpc("admin_correct_price_final_v1", { _ride: id, _new_price: Number(price), _reason: reason });
-    if (error) { onNotice({ tone: "error", text: errMsg(error.message) }); return; }
-    onNotice({ tone: "success", text: "Prix final corrigé et journalisé." });
+    if (error) { onNotice(errMsg(error.message)); return; }
+    onNotice("Prix final corrigé et journalisé.");
     setEditing(null); setPrice(""); setReason(""); void reload();
   };
   return (
@@ -159,13 +159,13 @@ export function FinanceV1({ onNotice }: { onNotice: Notice }) {
 
   const createRule = async () => {
     const { error } = await supabase.rpc("admin_create_associate_rule_v1", { _associate: assoc, _percent: Number(pct), _from: from });
-    if (error) { onNotice({ tone: "error", text: errMsg(error.message) }); return; }
-    onNotice({ tone: "success", text: "Règle de part créée." }); setPct(""); void sh.reload();
+    if (error) { onNotice(errMsg(error.message)); return; }
+    onNotice("Règle de part créée."); setPct(""); void sh.reload();
   };
   const closeRule = async (id: string) => {
     const { error } = await supabase.rpc("admin_close_associate_rule_v1", { _rule: id, _to: closeDate[id] });
-    if (error) { onNotice({ tone: "error", text: errMsg(error.message) }); return; }
-    onNotice({ tone: "success", text: "Règle clôturée." }); void sh.reload();
+    if (error) { onNotice(errMsg(error.message)); return; }
+    onNotice("Règle clôturée."); void sh.reload();
   };
 
   return (
@@ -279,20 +279,20 @@ export function RestrictionsAuditV1({ onNotice }: { onNotice: Notice }) {
 
   const apply = async () => {
     const { error } = await supabase.rpc("admin_create_driver_restriction_v1", { _driver: driver, _type: type, _reason: reason });
-    if (error) { onNotice({ tone: "error", text: errMsg(error.message) }); return; }
-    onNotice({ tone: "success", text: "Restriction appliquée." }); setReason(""); refresh();
+    if (error) { onNotice(errMsg(error.message)); return; }
+    onNotice("Restriction appliquée."); setReason(""); refresh();
   };
   const offline = async () => {
     const { data, error } = await supabase.rpc("admin_force_driver_offline_v1", { _driver: driver, _reason: reason });
-    if (error) { onNotice({ tone: "error", text: errMsg(error.message) }); return; }
+    if (error) { onNotice(errMsg(error.message)); return; }
     const kept = Number((data as Row | null)?.engaged_rides_kept ?? 0);
-    onNotice({ tone: "success", text: kept ? `Chauffeur hors ligne. ${kept} course(s) engagée(s) se poursuivent.` : "Chauffeur hors ligne." });
+    onNotice(kept ? `Chauffeur hors ligne. ${kept} course(s) engagée(s) se poursuivent.` : "Chauffeur hors ligne.");
     setReason(""); refresh();
   };
   const lift = async (id: string) => {
     const { error } = await supabase.rpc("admin_lift_driver_restriction_v1", { _restriction: id, _reason: liftReason[id] ?? "" });
-    if (error) { onNotice({ tone: "error", text: errMsg(error.message) }); return; }
-    onNotice({ tone: "success", text: "Restriction levée." }); refresh();
+    if (error) { onNotice(errMsg(error.message)); return; }
+    onNotice("Restriction levée."); refresh();
   };
 
   return (
