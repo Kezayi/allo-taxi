@@ -195,50 +195,80 @@ function DriverWorkspace() {
     setDriver(data ?? null);
     if (!data || data.status !== "approved") return;
     // Ticket journalier V1 : driver_day_passes est la seule référence (plus de lecture de subscriptions)
-    const [{ data: access }, { data: current }] = await Promise.all([
+    // Courses en cours : projection serveur (plus de lecture directe de la table des courses)
+    const [{ data: access }, { data: current, error: currentError }] = await Promise.all([
       supabase.rpc("get_my_driver_day_access"),
-      supabase.from("rides").select("*").eq("chauffeur_id", user.id).in("status", ["negotiating", "onboard"]).order("started_negotiation_at"),
+      supabase.rpc("get_my_active_rides"),
     ]);
     const acc = (access ?? {}) as { access_valid?: boolean; ticket_mode?: string; ticket_price_fcfa?: number; xfin_configured?: boolean };
     const valid = Boolean(acc.access_valid);
     setTicket({ mode: acc.ticket_mode === "PAID" ? "PAID" : "FREE", price: acc.ticket_price_fcfa ?? 1000, xfin: Boolean(acc.xfin_configured) });
+    const rows = (currentError ? null : (current as unknown as Array<Record<string, unknown>> | null)) ?? null;
     patchState({
       accessActive: valid,
       airConditioning: data.has_ac,
       ...(valid ? {} : { isOnline: false }),
-      activeRides: (current ?? []).map((row) => ({ id: row.id, client: row.client_name, phone: row.client_phone, distance: null, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed, status: row.status === "onboard" ? "onboard" as const : "negotiating" as const, sharing: row.allow_sharing, anchor: row.anchor_ride_id === null })),
+      ...(rows ? {
+        v1Ride: (rows.find((r) => r["workflow_version"] === "v1") as unknown as V1Ride | undefined) ?? null,
+        activeRides: rows.filter((r) => r["workflow_version"] === "legacy").map((r) => ({
+          id: String(r["ride_id"]), client: String(r["client_first_name"] ?? ""), phone: String(r["client_phone"] ?? ""), distance: null,
+          pickup: String(r["pickup_location"]), destination: String(r["dropoff_location"]), payment: String(r["payment_method"] ?? ""),
+          airConditioning: Boolean(r["wants_ac"]), price: Number(r["price_proposed"]),
+          status: r["status"] === "onboard" ? "onboard" as const : "negotiating" as const, sharing: Boolean(r["allow_sharing"]), anchor: Boolean(r["is_anchor"]),
+        })),
+      } : {}),
     });
   }, [patchState, user]);
 
   useEffect(() => { void loadDriver(); }, [loadDriver]);
 
-  // Pool localisé : rafraîchi toutes les 10 s quand le chauffeur est en ligne
+  // Pool V1 : uniquement les nouvelles courses V1, projection sans identité ni téléphone du client
   const refreshPool = useCallback(async () => {
     const position = await getPosition();
-    const { data, error } = await supabase.rpc("get_localized_pool_for_driver", { _lat: position?.lat ?? null as unknown as number, _lng: position?.lng ?? null as unknown as number, _radius_km: null as unknown as number });
+    const { data, error } = await supabase.rpc("get_pool_v1", { _lat: position?.lat ?? null as unknown as number, _lng: position?.lng ?? null as unknown as number, _radius_km: null as unknown as number });
     if (error) {
-      if (error.message.includes("Abonnement")) patchState({ accessActive: false, isOnline: false });
+      if (error.message.includes("DAY_ACCESS_REQUIRED")) patchState({ accessActive: false, isOnline: false });
       return;
     }
     const rows = data ?? [];
-    const fresh = rows.some((row) => !seenRideIds.current.has(row.id));
+    const fresh = rows.some((row) => !seenRideIds.current.has(row.ride_id));
     if (fresh && poolPrimed.current) chimes.newRide();
-    rows.forEach((row) => seenRideIds.current.add(row.id));
+    rows.forEach((row) => seenRideIds.current.add(row.ride_id));
     poolPrimed.current = true;
-    setOffers(rows.map((row) => ({ id: row.id, client: "", phone: "", distance: row.distance_km, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed })));
+    setOffers(rows.map((row) => ({ id: row.ride_id, client: "", phone: "", distance: row.distance_km, pickup: row.pickup_location, destination: row.dropoff_location, payment: row.payment_method, airConditioning: row.wants_ac, price: row.price_proposed, landmark: row.pickup_landmark, dropoffNote: row.dropoff_note, passengers: row.passenger_count, sharing: row.allow_sharing })));
   }, [patchState]);
 
   const negotiating = state.activeRides.find((ride) => ride.status === "negotiating") ?? null;
   const onboard = state.activeRides.filter((ride) => ride.status === "onboard");
   const anchorRide = state.activeRides.find((ride) => ride.anchor) ?? null;
-  const canShare = state.activeRides.length === 0 || (!negotiating && Boolean(anchorRide?.sharing) && anchorRide?.status === "onboard" && state.activeRides.length < MAX_SEATS);
+  // LOT 4B : pas de partage réel ; toute course en cours (legacy ou V1) suspend le pool.
+  const engaged = state.activeRides.length > 0 || state.v1Ride !== null;
 
   useEffect(() => {
-    if (!isApproved || !state.accessActive || !state.isOnline || negotiating || !canShare || !networkOnline) return;
+    if (!isApproved || !state.accessActive || !state.isOnline || engaged || !networkOnline) return;
     void refreshPool();
     const interval = window.setInterval(() => void refreshPool(), POOL_REFRESH_MS);
     return () => window.clearInterval(interval);
-  }, [isApproved, networkOnline, refreshPool, state.accessActive, state.isOnline, negotiating, canShare]);
+  }, [isApproved, networkOnline, refreshPool, state.accessActive, state.isOnline, engaged]);
+
+  // Course en cours : l'état serveur fait foi (le client peut confirmer, refuser ou annuler à tout moment)
+  useEffect(() => {
+    if (!isApproved || !engaged || !networkOnline) return;
+    const interval = window.setInterval(() => void loadDriver(), ACTIVE_REFRESH_MS);
+    return () => window.clearInterval(interval);
+  }, [isApproved, engaged, networkOnline, loadDriver]);
+
+  const prevV1 = useRef<{ id: string; status: V1Status } | null>(null);
+  useEffect(() => {
+    const prev = prevV1.current;
+    const cur = state.v1Ride;
+    if (prev && cur && prev.id === cur.ride_id && prev.status === "CONTACT_PENDING" && cur.status === "CONFIRMED") {
+      chimes.accepted();
+      setNotice("Le client a confirmé la course.");
+    }
+    if (prev && hydrated && !cur && !state.activeRides.length) setNotice("La course n’est plus active (terminée, annulée ou relâchée).");
+    prevV1.current = cur ? { id: cur.ride_id, status: cur.status } : null;
+  }, [state.v1Ride, state.activeRides.length, hydrated]);
 
   // Position partagée toutes les 20 s pendant une course : alimente le temps d'arrivée affiché au client
   const lockedId = negotiating?.id;
@@ -282,16 +312,25 @@ function DriverWorkspace() {
 
   async function takeRide(id: string) {
     setBusy(true);
-    const { data, error } = await supabase.rpc("take_ride", { _ride_id: id });
+    const { error } = await supabase.rpc("reserve_ride_v1", { _ride_id: id });
     setBusy(false);
-    const row = data?.[0];
-    if (error || !row) {
-      setNotice(friendlyError(error?.message));
+    if (error) {
+      setNotice(friendlyError(error.message));
       void refreshPool();
       return;
     }
     setOffers([]);
     await loadDriver();
+    setNotice("Course réservée. Le client va vous contacter sur WhatsApp.");
+  }
+
+  async function runV1(fn: () => PromiseLike<{ error: { message: string } | null }>, success: string) {
+    setBusy(true);
+    const { error } = await fn();
+    setBusy(false);
+    await loadDriver();
+    if (error) return setNotice(friendlyError(error.message));
+    setNotice(success);
   }
 
   async function finishRide(success: boolean) {
@@ -351,14 +390,27 @@ function DriverWorkspace() {
 
         <div className={cn("mt-5 space-y-5 transition duration-700", !state.accessActive && "pointer-events-none select-none blur-md")} aria-hidden={!state.accessActive}>
           <ActivationDashboard state={state} onPatch={(update) => void updateAvailability(update)} />
-          {onboard.length > 0 && <OnboardPanel rides={onboard} anchor={anchorRide} seatsLeft={MAX_SEATS - state.activeRides.length} busy={busy} onDropOff={(id) => void dropOff(id)} />}
-          {negotiating ? (
-            <NegotiationScreen ride={negotiating} busy={busy} onFinish={(success) => void finishRide(success)} />
-          ) : !state.isOnline ? (
-            <OfflinePanel />
-          ) : canShare ? (
-            <RidePool offers={offers} airConditioning={state.airConditioning} busy={busy} shared={state.activeRides.length > 0} onTake={(id) => void takeRide(id)} />
-          ) : null}
+          {state.v1Ride ? (
+            <V1RideScreen
+              ride={state.v1Ride}
+              busy={busy}
+              onAdvance={(action, success) => void runV1(() => supabase.rpc("advance_ride_v1", { _ride_id: state.v1Ride!.ride_id, _action: action }), success)}
+              onRelease={(reason) => void runV1(() => supabase.rpc("release_ride_v1", { _ride_id: state.v1Ride!.ride_id, _reason: reason as unknown as string }), "Course relâchée : elle retourne aux autres chauffeurs.")}
+              onCancel={(reason) => void runV1(() => supabase.rpc("cancel_ride_by_driver_v1", { _ride_id: state.v1Ride!.ride_id, _reason: reason }), "Course annulée. Le client est informé sur son écran.")}
+            />
+          ) : (
+            <>
+              {/* Compatibilité : course legacy acceptée avant la mise à jour, menée à son terme puis plus jamais proposée */}
+              {onboard.length > 0 && <OnboardPanel rides={onboard} anchor={anchorRide} seatsLeft={MAX_SEATS - state.activeRides.length} busy={busy} onDropOff={(id) => void dropOff(id)} />}
+              {negotiating ? (
+                <NegotiationScreen ride={negotiating} busy={busy} onFinish={(success) => void finishRide(success)} />
+              ) : !state.isOnline ? (
+                <OfflinePanel />
+              ) : !engaged ? (
+                <RidePool offers={offers} airConditioning={state.airConditioning} busy={busy} onTake={(id) => void takeRide(id)} />
+              ) : null}
+            </>
+          )}
         </div>
 
         {!state.accessActive && (
