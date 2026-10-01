@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
+import { useServerFn } from "@tanstack/react-start";
+import { analyzeDriverDocument } from "@/lib/document-ai.functions";
 import { cn } from "@/lib/utils";
 
 export const DOC_LABELS: Record<string, string> = {
@@ -28,6 +30,7 @@ export type OnboardingDoc = {
   present: boolean;
   document_id: string | null;
   status: string | null;
+  analysis_pending?: boolean;
   expires_on: string | null;
   version: number | null;
   submitted_at: string | null;
@@ -49,6 +52,7 @@ export type OnboardingVehicle = {
 export type Onboarding = {
   driver: { onboarding_status: string; status: string; first_name: string; last_name: string | null };
   global_state: string;
+  eligibility?: { eligible: boolean; reasons: string[]; mode: "shadow" | "enforced" };
   active_vehicle: OnboardingVehicle | null;
   documents: OnboardingDoc[];
   summary: { total_required: number; approved: number; missing: number };
@@ -64,7 +68,7 @@ const GLOBAL_LABELS: Record<string, { label: string; tone: "live" | "gold" | "da
 export function docStatusChip(status: string | null) {
   if (!status) return { label: "Manquant", tone: "muted" as const };
   if (status === "approved") return { label: "Approuvé", tone: "live" as const };
-  if (status === "submitted") return { label: "En attente", tone: "gold" as const };
+  if (status === "submitted" || status === "under_review") return { label: "En attente de validation", tone: "gold" as const };
   if (status === "rejected") return { label: "Correction demandée", tone: "danger" as const };
   if (status === "expired") return { label: "Expiré", tone: "danger" as const };
   return { label: status, tone: "muted" as const };
@@ -119,6 +123,15 @@ export function DriverOnboarding({ userId, onNotice }: { userId: string; onNotic
         <div className="mt-4 h-2 overflow-hidden rounded-full bg-secondary">
           <div className="h-full rounded-full bg-primary transition-[width] duration-700" style={{ width: `${(data.summary.approved / data.summary.total_required) * 100}%` }} />
         </div>
+        {data.eligibility && (
+          <p className="mt-3 text-xs text-muted-foreground" role="status">
+            {data.eligibility.eligible
+              ? "Votre dossier vous permet d’accepter de nouvelles courses."
+              : data.eligibility.mode === "enforced"
+                ? "Dossier incomplet : vous ne pouvez pas accepter de nouvelles courses tant qu’il n’est pas validé."
+                : "Dossier incomplet : il deviendra bientôt obligatoire pour accepter de nouvelles courses."}
+          </p>
+        )}
       </div>
 
       <VehicleForm vehicle={data.active_vehicle} onSaved={() => { void load(); }} onNotice={onNotice} />
@@ -230,7 +243,8 @@ function DocumentRow({ doc, userId, vehicleId, onDone, onNotice }: { doc: Onboar
   const inputRef = useRef<HTMLInputElement>(null);
   const [expiry, setExpiry] = useState("");
   const [busy, setBusy] = useState(false);
-  const chip = docStatusChip(doc.status);
+  const chip = doc.analysis_pending && doc.status === "submitted" ? { label: "En cours d’analyse", tone: "gold" as const } : docStatusChip(doc.status);
+  const analyze = useServerFn(analyzeDriverDocument);
   const needsVehicle = doc.scope === "vehicle" && !vehicleId;
 
   async function upload(file: File) {
@@ -246,7 +260,7 @@ function DocumentRow({ doc, userId, vehicleId, onDone, onNotice }: { doc: Onboar
       setBusy(false);
       return onNotice("Envoi du fichier impossible. Vérifiez votre connexion.");
     }
-    const { error } = await supabase.rpc("register_my_document", {
+    const { data: registered, error } = await supabase.rpc("register_my_document", {
       _doc_type: doc.doc_type,
       _storage_path: path,
       _mime_type: file.type,
@@ -261,8 +275,13 @@ function DocumentRow({ doc, userId, vehicleId, onDone, onNotice }: { doc: Onboar
       return onNotice("Pièce non enregistrée. Réessayez.");
     }
     setExpiry("");
-    onNotice(`${DOC_LABELS[doc.doc_type] ?? "Pièce"} déposée. En attente d’examen.`);
+    onNotice(`${DOC_LABELS[doc.doc_type] ?? "Pièce"} déposée. En cours d’analyse.`);
     onDone();
+    // Analyse serveur : un échec ne remet jamais en cause le dépôt (validation humaine possible).
+    const documentId = (registered as unknown as { document_id?: string } | null)?.document_id;
+    if (documentId) {
+      void analyze({ data: { documentId } }).catch(() => undefined).finally(onDone);
+    }
   }
 
   return (

@@ -1,4 +1,5 @@
-import { CheckCircle2, Eye, FileCheck2, History, Loader2, RotateCcw, ShieldCheck, UserCog } from "lucide-react";
+import { Bot, CheckCircle2, Eye, FileCheck2, History, Loader2, Lock, RotateCcw, ShieldCheck, UserCog } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Chip, DOC_LABELS, docStatusChip } from "@/components/driver/onboarding";
 import { supabase } from "@/integrations/supabase/client";
+import { analyzeDriverDocument } from "@/lib/document-ai.functions";
 import { cn } from "@/lib/utils";
 
 type Dossier = {
@@ -52,6 +54,41 @@ type DossierDetail = {
   } | null;
   documents: DossierDoc[];
 };
+
+type Eligibility = { eligible: boolean; reasons: string[]; mode?: "shadow" | "enforced" };
+type AiCheck = {
+  document_id: string; ai_model: string | null; result: string; confidence: number | null; decision: string | null; created_at: string;
+  extracted_data: { readable?: boolean; extracted_fields?: Record<string, unknown>; warnings?: string[]; recommended_decision?: string };
+  anomalies: { inconsistencies?: string[]; server_checks?: string[] };
+};
+type AiRun = { document_id: string; status: string; attempts: number; error_code: string | null };
+type AiDetail = { eligibility: Eligibility; checks: AiCheck[]; runs: AiRun[] };
+type EnforcementStatus = {
+  mode: "shadow" | "enforced"; enforced_at: string | null; ready_for_enforcement: boolean; ai_auto_approve_min_confidence: number;
+  real_drivers: { driver_id: string; first_name: string; last_name: string | null; eligibility: Eligibility }[];
+};
+
+const REASON_LABELS: Record<string, string> = {
+  DRIVER_NOT_APPROVED: "Chauffeur non approuvé",
+  DRIVER_SUSPENDED: "Chauffeur suspendu",
+  DRIVER_REJECTED: "Dossier refusé",
+  VEHICLE_NOT_APPROVED: "Véhicule non validé",
+  INVALID_CAPACITY: "Capacité invalide",
+  DOCUMENT_MISSING: "Pièce manquante",
+  DOCUMENT_PENDING: "Pièce en attente",
+  DOCUMENT_CORRECTION_REQUIRED: "Correction demandée",
+  DOCUMENT_EXPIRED: "Pièce expirée",
+};
+const FIELD_LABELS: Record<string, string> = {
+  full_name: "Nom", document_number: "Numéro", expiry_date: "Échéance", categories: "Catégories", plate: "Plaque",
+  make_model: "Marque/modèle", registered_seats: "Places homologuées", person_visible: "Personne visible",
+  face_visible: "Visage visible", vehicle_visible: "Véhicule visible", quality_ok: "Qualité suffisante",
+};
+function fieldValue(v: unknown) {
+  if (v === true) return "oui";
+  if (v === false) return "non";
+  return String(v);
+}
 
 const STATE_LABELS: Record<string, { label: string; tone: "live" | "gold" | "danger" | "muted" }> = {
   approved: { label: "Dossier validé", tone: "live" },
@@ -107,6 +144,8 @@ export function DriverDossiers({ onNotice }: { onNotice: (message: string) => vo
         </div>
       </div>
 
+      <EnforcementPanel onNotice={onNotice} refreshKey={rows} />
+
       <div className="mt-5 space-y-2">
         {loading && <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-4 animate-spin" />Chargement…</p>}
         {!loading && shown.length === 0 && <p className="text-xs text-muted-foreground">Aucun dossier dans cette catégorie.</p>}
@@ -147,13 +186,41 @@ function DossierSheet({ driverId, onClose, onChanged, onNotice }: { driverId: st
   const [detail, setDetail] = useState<DossierDetail | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [ai, setAi] = useState<AiDetail | null>(null);
+  const analyze = useServerFn(analyzeDriverDocument);
 
   const load = useCallback(async () => {
-    if (!driverId) return setDetail(null);
-    const { data, error } = await supabase.rpc("admin_get_driver_dossier", { _driver_id: driverId });
+    if (!driverId) { setAi(null); return setDetail(null); }
+    const [{ data, error }, aiRes] = await Promise.all([
+      supabase.rpc("admin_get_driver_dossier", { _driver_id: driverId }),
+      supabase.rpc("admin_list_driver_ai_checks", { _driver_id: driverId }),
+    ]);
     if (error) return onNotice("Dossier illisible.");
     setDetail(data as unknown as DossierDetail);
+    setAi(aiRes.error ? null : (aiRes.data as unknown as AiDetail));
   }, [driverId, onNotice]);
+
+  async function runAi(documentId: string) {
+    setBusy(`ai-${documentId}`);
+    try {
+      const res = await analyze({ data: { documentId } });
+      const messages: Record<string, string> = {
+        auto_approved: "Analyse IA : pièce approuvée automatiquement.",
+        manual_review: "Analyse IA : revue humaine requise.",
+        ai_unavailable: "Analyse IA indisponible : la validation humaine reste possible.",
+        already_analyzed: "Cette version a déjà été analysée.",
+        in_progress: "Analyse déjà en cours.",
+        failed: "Nombre maximal d’analyses atteint pour cette version.",
+        not_current: "Cette version n’est plus la version courante.",
+      };
+      onNotice(messages[res.status] ?? "Analyse non lancée.");
+    } catch {
+      onNotice("Analyse IA indisponible : la validation humaine reste possible.");
+    }
+    setBusy(null);
+    await load();
+    onChanged();
+  }
 
   useEffect(() => { void load(); }, [load]);
 
@@ -217,7 +284,13 @@ function DossierSheet({ driverId, onClose, onChanged, onNotice }: { driverId: st
           <div className="grid place-items-center py-16"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
         ) : (
           <div className="mt-5 space-y-5">
-            {state && <Chip tone={state.tone}>{state.label}</Chip>}
+            <div className="flex flex-wrap items-center gap-2">
+              {state && <Chip tone={state.tone}>{state.label}</Chip>}
+              {ai && <Chip tone={ai.eligibility.eligible ? "live" : "danger"}>{ai.eligibility.eligible ? "Éligible aux nouvelles courses" : "Non éligible"}</Chip>}
+            </div>
+            {ai && !ai.eligibility.eligible && (
+              <p className="text-[11px] text-muted-foreground">Motifs : {ai.eligibility.reasons.map((r) => REASON_LABELS[r] ?? r).join(" · ")}{ai.eligibility.mode === "shadow" ? " — mode observation, aucun blocage." : ""}</p>
+            )}
 
             <section className="rounded-md border border-border bg-secondary/60 p-4">
               <p className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="size-4 text-primary" />Véhicule actif</p>
@@ -267,14 +340,19 @@ function DossierSheet({ driverId, onClose, onChanged, onNotice }: { driverId: st
                         <Button size="sm" disabled={busy === doc.document_id} onClick={() => void reviewDoc(doc.document_id, "approve")} className="h-9 bg-live text-foreground hover:bg-live/90"><CheckCircle2 className="size-3.5" />Approuver</Button>
                         <Button size="sm" variant="outline" disabled={busy === doc.document_id} onClick={() => void reviewDoc(doc.document_id, "request_correction")} className="h-9 text-destructive">Correction</Button>
                       </div>
-                      {doc.checks.length > 0 && (
-                        <ul className="mt-3 space-y-1 border-t border-border pt-3">
-                          {doc.checks.map((c, index) => (
-                            <li key={index} className="text-[11px] text-muted-foreground">
-                              {frDateTime(c.created_at)} · {c.method === "human" ? "Contrôle humain" : "Contrôle automatique"} · {c.decision === "approve" ? "approuvé" : "correction demandée"}{c.reason ? ` — ${c.reason}` : ""}
-                            </li>
-                          ))}
-                        </ul>
+                      <AiBlock check={ai?.checks.find((c) => c.document_id === doc.document_id) ?? null} run={ai?.runs.find((r) => r.document_id === doc.document_id) ?? null}
+                        busy={busy === `ai-${doc.document_id}`} onRun={() => void runAi(doc.document_id)} />
+                      {doc.checks.some((c) => c.method === "human") && (
+                        <div className="mt-3 border-t border-border pt-3">
+                          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase text-foreground"><UserCog className="size-3.5 text-primary" />Décision humaine</p>
+                          <ul className="mt-1 space-y-1">
+                            {doc.checks.filter((c) => c.method === "human").map((c, index) => (
+                              <li key={index} className="text-[11px] text-muted-foreground">
+                                {frDateTime(c.created_at)} · {c.decision === "approve" ? "approuvé" : "correction demandée"}{c.reason ? ` — ${c.reason}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
                     </div>
                   );
@@ -299,5 +377,97 @@ function DossierSheet({ driverId, onClose, onChanged, onNotice }: { driverId: st
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+function AiBlock({ check, run, busy, onRun }: { check: AiCheck | null; run: AiRun | null; busy: boolean; onRun: () => void }) {
+  const fields = Object.entries(check?.extracted_data.extracted_fields ?? {}).filter(([, v]) => v !== null && v !== undefined);
+  const issues = [...(check?.anomalies.inconsistencies ?? []), ...(check?.anomalies.server_checks ?? [])];
+  const warnings = check?.extracted_data.warnings ?? [];
+  return (
+    <div className="mt-3 rounded-md border border-border bg-background/40 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase text-foreground"><Bot className="size-3.5 text-primary" />Analyse IA (indicative)</p>
+        {check ? (
+          <Chip tone={check.decision === "approve" ? "live" : "gold"}>
+            {check.decision === "approve" ? "Approbation IA" : "Revue humaine requise"}{check.confidence !== null ? ` · ${Math.round(check.confidence * 100)} %` : ""}
+          </Chip>
+        ) : run?.status === "pending" ? (
+          <Chip tone="gold">En cours</Chip>
+        ) : (
+          <Button size="sm" variant="outline" disabled={busy} onClick={onRun} className="h-8 text-[11px]">
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Bot className="size-3.5" />}{run?.status === "failed" ? "Relancer l’analyse" : "Lancer l’analyse"}
+          </Button>
+        )}
+      </div>
+      {!check && run?.status === "failed" && <p className="mt-2 text-[11px] text-muted-foreground">Dernière analyse indisponible ({run.error_code ?? "erreur"}). La décision humaine reste possible.</p>}
+      {check && (
+        <div className="mt-2 space-y-1.5 text-[11px] text-muted-foreground">
+          <p>{frDateTime(check.created_at)} · {check.extracted_data.readable ? "lisible" : "illisible"}{check.ai_model ? ` · ${check.ai_model}` : ""}</p>
+          {fields.length > 0 && <p>{fields.map(([k, v]) => `${FIELD_LABELS[k] ?? k} : ${fieldValue(v)}`).join(" · ")}</p>}
+          {issues.length > 0 && <p className="text-destructive">Incohérences : {issues.join(" · ")}</p>}
+          {warnings.length > 0 && <p className="text-primary">Avertissements : {warnings.join(" · ")}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EnforcementPanel({ onNotice, refreshKey }: { onNotice: (m: string) => void; refreshKey: unknown }) {
+  const [status, setStatus] = useState<EnforcementStatus | null>(null);
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.rpc("get_onboarding_enforcement_status");
+    if (!error) setStatus(data as unknown as EnforcementStatus);
+  }, []);
+  useEffect(() => { void load(); }, [load, refreshKey]);
+
+  async function enable() {
+    setBusy(true);
+    const { error } = await supabase.rpc("enable_onboarding_enforcement", { _confirmation: confirm });
+    setBusy(false);
+    if (error) {
+      if (error.message.includes("NOT_READY")) return onNotice("Activation refusée : tous les chauffeurs réels ne sont pas éligibles.");
+      if (error.message.includes("CONFIRMATION")) return onNotice("Tapez ACTIVER pour confirmer.");
+      return onNotice("Activation impossible.");
+    }
+    setConfirm("");
+    onNotice("Obligation documentaire activée définitivement.");
+    await load();
+  }
+
+  if (!status) return null;
+  return (
+    <div className="mt-5 rounded-md border border-border bg-secondary/60 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-sm font-semibold"><Lock className="size-4 text-primary" />Obligation documentaire</p>
+        <Chip tone={status.mode === "enforced" ? "live" : "gold"}>{status.mode === "enforced" ? `Active depuis le ${frDate(status.enforced_at)}` : "Mode observation"}</Chip>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {status.mode === "enforced"
+          ? "Un dossier non éligible empêche la mise en ligne et la prise de nouvelles courses. Les courses en cours peuvent toujours être terminées."
+          : "L’éligibilité est calculée mais ne bloque personne. L’activation est définitive et exige que tous les chauffeurs réels soient éligibles."}
+      </p>
+      <ul className="mt-2 space-y-1">
+        {status.real_drivers.map((d) => (
+          <li key={d.driver_id} className="text-[11px] text-muted-foreground">
+            {d.first_name} {d.last_name ?? ""} — {d.eligibility.eligible ? "éligible" : `non éligible (${d.eligibility.reasons.map((r) => REASON_LABELS[r] ?? r).join(", ")})`}
+          </li>
+        ))}
+      </ul>
+      {status.mode === "shadow" && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Chip tone={status.ready_for_enforcement ? "live" : "danger"}>Prêt pour l’activation : {status.ready_for_enforcement ? "oui" : "non"}</Chip>
+          {status.ready_for_enforcement && (
+            <>
+              <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Tapez ACTIVER" className="h-9 max-w-[10rem] text-xs" />
+              <Button size="sm" disabled={busy || confirm !== "ACTIVER"} onClick={() => void enable()} className="h-9">Activer définitivement</Button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

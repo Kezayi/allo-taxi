@@ -204,6 +204,27 @@
       "when": 1790848774268,
       "tag": "0028_lot2b_human_review_and_immutable_files",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790850924192,
+      "tag": "0029_lot2c_ai_documents_and_eligibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790850961640,
+      "tag": "0030_lot2c_admin_ai_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790851133369,
+      "tag": "0031_lot2c_fix_array_append",
+      "breakpoints": true
     }
   ]
 }
