@@ -274,6 +274,13 @@
       "when": 1790876889327,
       "tag": "0038_lot5_shared_rides_v1",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790877831014,
+      "tag": "0039_lot5_dropoff_coordinates",
+      "breakpoints": true
     }
   ]
 }

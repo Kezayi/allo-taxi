@@ -128,6 +128,16 @@ function getPosition(): Promise<{ lat: number; lng: number } | null> {
   });
 }
 
+/* Lecture locale d'une localisation partagée (WhatsApp/Maps « @lat,lng », « q=lat,lng » ou « lat, lng ») — aucun service externe. */
+function parseLocation(raw: string): { lat: number; lng: number } | null {
+  const m = raw.match(/(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/);
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
 function errorText(message: string | undefined, fallback: string) {
   const m = message ?? "";
   if (m.includes("ACTIVE_RIDE_EXISTS")) return "Une course est déjà en cours avec ce numéro. Terminez-la ou annulez-la avant d’en publier une nouvelle.";
@@ -236,6 +246,9 @@ function RequestScreen({ onCreated }: { onCreated: (s: Session) => void }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsState, setGpsState] = useState<"idle" | "loading" | "ok" | "unavailable">("idle");
+  const [dropGps, setDropGps] = useState<{ lat: number; lng: number } | null>(null);
+  const [dropLink, setDropLink] = useState("");
+  const [dropState, setDropState] = useState<"idle" | "loading" | "ok" | "unavailable" | "invalid">("idle");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -249,6 +262,21 @@ function RequestScreen({ onCreated }: { onCreated: (s: Session) => void }) {
     const pos = await getPosition();
     setGps(pos);
     setGpsState(pos ? "ok" : "unavailable");
+  }
+
+  async function locateDrop() {
+    setDropState("loading");
+    const pos = await getPosition();
+    setDropGps(pos);
+    setDropState(pos ? "ok" : "unavailable");
+  }
+
+  function onDropLink(value: string) {
+    setDropLink(value);
+    if (!value.trim()) { setDropGps(null); setDropState("idle"); return; }
+    const pos = parseLocation(value);
+    setDropGps(pos);
+    setDropState(pos ? "ok" : "invalid");
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -272,6 +300,7 @@ function RequestScreen({ onCreated }: { onCreated: (s: Session) => void }) {
       _pickup_landmark: d.landmark,
       _pickup_lat: (gps?.lat ?? null) as unknown as number,
       _pickup_lng: (gps?.lng ?? null) as unknown as number,
+      ...(dropGps ? { _dropoff_lat: dropGps.lat, _dropoff_lng: dropGps.lng } : {}),
       _dropoff_location: d.destination,
       _dropoff_note: d.dropoffNote,
       _passenger_count: d.passengers,
@@ -313,6 +342,16 @@ function RequestScreen({ onCreated }: { onCreated: (s: Session) => void }) {
           <Field label="Repère (facultatif)" error={errors["landmark"]}><Input value={form.landmark} onChange={(e) => update("landmark", e.target.value)} maxLength={120} placeholder="Ex : devant la pharmacie" className="h-12" /></Field>
           <div className="ml-5 h-5 border-l border-dashed border-primary/50" />
           <Field label="🏁 Destination" error={errors["destination"]}><Input value={form.destination} onChange={(e) => update("destination", e.target.value)} maxLength={120} placeholder="Ex : Nzeng-Ayong, rond-point" className="h-12" /></Field>
+          <div className="space-y-2">
+            <Input value={dropLink} onChange={(e) => onDropLink(e.target.value)} placeholder="Coller une localisation (WhatsApp, Maps ou « lat, lng »)" className="h-11" aria-label="Localisation GPS de la destination" />
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="button" variant="outline" size="sm" onClick={() => void locateDrop()} disabled={dropState === "loading"}><Flag />{dropState === "loading" ? "Localisation…" : "Je suis à la destination"}</Button>
+              <span className={cn("text-xs", dropGps ? "text-live" : "text-muted-foreground")}>
+                {dropGps ? "Destination géolocalisée" : dropState === "invalid" ? "Localisation non reconnue" : dropState === "unavailable" ? "Position indisponible" : "Facultatif, nécessaire au taxi partagé"}
+              </span>
+              {dropGps && <Button type="button" variant="ghost" size="sm" onClick={() => { setDropGps(null); setDropLink(""); setDropState("idle"); }}><X />Retirer</Button>}
+            </div>
+          </div>
           <Field label="Indication complémentaire (facultatif)" error={errors["dropoffNote"]}><Input value={form.dropoffNote} onChange={(e) => update("dropoffNote", e.target.value)} maxLength={160} placeholder="Ex : portail bleu après l’école" className="h-12" /></Field>
         </section>
 
