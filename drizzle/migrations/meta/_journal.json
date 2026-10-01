@@ -260,6 +260,13 @@
       "when": 1790873802630,
       "tag": "0036_lot4b_frontend_switch_v1",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790876041503,
+      "tag": "0037_lot4_client_phone_normalization",
+      "breakpoints": true
     }
   ]
 }
