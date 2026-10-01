@@ -183,6 +183,13 @@
       "when": 1790845421354,
       "tag": "0025_v1_associates_share_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790847267195,
+      "tag": "0026_v1_audit_notifications",
+      "breakpoints": true
     }
   ]
 }

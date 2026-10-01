@@ -141,6 +141,48 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_events: {
+        Row: {
+          actor_id: string | null
+          actor_type: string
+          correlation_id: string | null
+          entity_id: string | null
+          entity_type: string
+          event_type: string
+          id: number
+          metadata: Json
+          occurred_at: string
+          reason: string | null
+          source: string
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_type: string
+          correlation_id?: string | null
+          entity_id?: string | null
+          entity_type: string
+          event_type: string
+          id?: never
+          metadata?: Json
+          occurred_at?: string
+          reason?: string | null
+          source: string
+        }
+        Update: {
+          actor_id?: string | null
+          actor_type?: string
+          correlation_id?: string | null
+          entity_id?: string | null
+          entity_type?: string
+          event_type?: string
+          id?: never
+          metadata?: Json
+          occurred_at?: string
+          reason?: string | null
+          source?: string
+        }
+        Relationships: []
+      }
       client_identities: {
         Row: {
           created_at: string
@@ -646,6 +688,87 @@ export type Database = {
             columns: ["active_vehicle_id"]
             isOneToOne: false
             referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_outbox: {
+        Row: {
+          attempt_count: number
+          available_at: string
+          channel: string
+          created_at: string
+          dedupe_key: string
+          id: number
+          last_attempt_at: string | null
+          last_error: string | null
+          locked_at: string | null
+          locked_by: string | null
+          notification_type: string
+          payload: Json
+          recipient_id: string
+          recipient_type: string
+          ride_event_id: number | null
+          ride_id: string | null
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          available_at?: string
+          channel: string
+          created_at?: string
+          dedupe_key: string
+          id?: never
+          last_attempt_at?: string | null
+          last_error?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          notification_type: string
+          payload?: Json
+          recipient_id: string
+          recipient_type: string
+          ride_event_id?: number | null
+          ride_id?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          available_at?: string
+          channel?: string
+          created_at?: string
+          dedupe_key?: string
+          id?: never
+          last_attempt_at?: string | null
+          last_error?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          notification_type?: string
+          payload?: Json
+          recipient_id?: string
+          recipient_type?: string
+          ride_event_id?: number | null
+          ride_id?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_outbox_ride_event_id_fkey"
+            columns: ["ride_event_id"]
+            isOneToOne: false
+            referencedRelation: "ride_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_outbox_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
             referencedColumns: ["id"]
           },
         ]
