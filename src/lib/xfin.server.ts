@@ -20,7 +20,7 @@ export class XfinNotConfiguredError extends XfinError {
   constructor() { super("XFIN_NOT_CONFIGURED"); }
 }
 
-interface XfinEnv { baseUrl: string; appKey?: string; appSecret?: string; webhookSecret?: string }
+interface XfinEnv { baseUrl: string; appKey: string | undefined; appSecret: string | undefined; webhookSecret: string | undefined }
 function readEnv(): XfinEnv {
   return {
     baseUrl: process.env["XFIN_BASE_URL"] || XFIN_DEFAULT_BASE_URL,
