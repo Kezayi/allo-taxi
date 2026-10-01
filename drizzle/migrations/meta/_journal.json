@@ -225,6 +225,13 @@
       "when": 1790851133369,
       "tag": "0031_lot2c_fix_array_append",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790852103942,
+      "tag": "0032_lot3a_day_ticket_v1_backend",
+      "breakpoints": true
     }
   ]
 }
