@@ -1477,6 +1477,10 @@ export type Database = {
     }
     Functions: {
       activate_driver_day: { Args: never; Returns: string }
+      activate_my_driver_day_v1: {
+        Args: { _payment_msisdn?: string }
+        Returns: Json
+      }
       admin_get_driver_dossier: { Args: { _driver_id: string }; Returns: Json }
       admin_list_driver_ai_checks: {
         Args: { _driver_id: string }
@@ -1616,6 +1620,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      driver_ticket_mode: { Args: never; Returns: string }
       drop_off_ride: { Args: { _ride_id: string }; Returns: string }
       enable_onboarding_enforcement: {
         Args: { _confirmation: string }
@@ -1693,6 +1698,7 @@ export type Database = {
           wants_ac: boolean
         }[]
       }
+      get_my_driver_day_access: { Args: never; Returns: Json }
       get_my_driver_onboarding: { Args: never; Returns: Json }
       get_onboarding_enforcement_status: { Args: never; Returns: Json }
       get_public_activity: {
@@ -1797,6 +1803,10 @@ export type Database = {
         Args: { _has_ac: boolean; _online: boolean }
         Returns: undefined
       }
+      set_driver_ticket_mode: {
+        Args: { _mode: string; _reason: string }
+        Returns: Json
+      }
       set_penalty_active: {
         Args: { _active: boolean; _id: string }
         Returns: undefined
@@ -1839,6 +1849,7 @@ export type Database = {
         }
         Returns: Json
       }
+      xfin_integration_ready: { Args: never; Returns: boolean }
     }
     Enums: {
       app_role: "client" | "chauffeur" | "associe" | "super_admin"
