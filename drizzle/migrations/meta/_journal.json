@@ -169,6 +169,13 @@
       "when": 1790841529813,
       "tag": "0023_v1_ride_events",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790843634116,
+      "tag": "0024_v1_driver_restrictions",
+      "breakpoints": true
     }
   ]
 }

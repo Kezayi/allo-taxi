@@ -422,6 +422,69 @@ export type Database = {
           },
         ]
       }
+      driver_restrictions: {
+        Row: {
+          created_at: string
+          created_by: string
+          driver_id: string
+          ends_at: string | null
+          id: string
+          lift_reason: string | null
+          lifted_at: string | null
+          lifted_by: string | null
+          penalty_id: string | null
+          reason: string
+          restriction_type: string
+          source: string
+          starts_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          driver_id: string
+          ends_at?: string | null
+          id?: string
+          lift_reason?: string | null
+          lifted_at?: string | null
+          lifted_by?: string | null
+          penalty_id?: string | null
+          reason: string
+          restriction_type: string
+          source?: string
+          starts_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          driver_id?: string
+          ends_at?: string | null
+          id?: string
+          lift_reason?: string | null
+          lifted_at?: string | null
+          lifted_by?: string | null
+          penalty_id?: string | null
+          reason?: string
+          restriction_type?: string
+          source?: string
+          starts_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_restrictions_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "drivers"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "driver_restrictions_penalty_id_fkey"
+            columns: ["penalty_id"]
+            isOneToOne: false
+            referencedRelation: "driver_penalties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       drivers: {
         Row: {
           active_vehicle_id: string | null
