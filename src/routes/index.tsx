@@ -132,7 +132,6 @@ function Index() {
           <div className="max-w-2xl">
             <p className="mb-4 text-xs font-semibold uppercase text-primary">Le mouvement, réinventé</p>
             <h1 className="text-4xl font-semibold leading-[1.08] sm:text-6xl lg:text-7xl">Ici, on s'accorde<br /><span className="text-muted-foreground">et on roule ensemble.</span></h1>
-            <p className="mt-6 max-w-lg text-sm leading-7 text-muted-foreground sm:text-base">Une mobilité urbaine exigeante, pensée ici. Choisissez votre espace et prenez la route.</p>
           </div>
 
           <section aria-label="Activité en direct" className="glass-panel p-4 sm:p-5">
