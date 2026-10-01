@@ -246,6 +246,13 @@
       "when": 1790854607850,
       "tag": "0034_lot3c_xfin_dormant_preparation",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790857883664,
+      "tag": "0035_lot4a_ride_workflow_v1",
+      "breakpoints": true
     }
   ]
 }
