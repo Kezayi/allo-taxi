@@ -251,8 +251,47 @@ export function SystemSettingsPanel({ settings, onSaved, onNotice }: { settings:
         <Button type="submit" disabled={busy} className="h-12 font-bold shadow-gold sm:col-span-3"><Save />Enregistrer les paramètres</Button>
       </form>
     </Panel>
+    <TicketModePanel onNotice={onNotice} />
     <SharedRidesToggle onNotice={onNotice} />
     </>
+  );
+}
+
+/* Ticket journalier V1 : lecture seule + changement via set_driver_ticket_mode (jamais direct) */
+function TicketModePanel({ onNotice }: { onNotice: Notice }) {
+  const [cfg, setCfg] = useState<{ mode: string; xfin_configured: boolean; standard_price_fcfa: number } | null>(null);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => void supabase.rpc("get_ticket_config").then(({ data }) => { if (data) setCfg(data as typeof cfg); });
+  useEffect(load, []);
+  async function change(mode: "FREE" | "PAID") {
+    setBusy(true); setError(null);
+    const { error: err } = await supabase.rpc("set_driver_ticket_mode", { _mode: mode, _reason: reason.trim() });
+    setBusy(false);
+    if (err) {
+      setError(err.message.includes("XFIN_NOT_CONFIGURED") ? "Refusé : le paiement xFin n’est pas configuré. Le mode reste FREE." : err.message.includes("REASON") ? "Motif obligatoire (3 caractères minimum)." : "Changement refusé.");
+    } else onNotice(`Mode ${mode} confirmé.`);
+    load();
+  }
+  return (
+    <Panel icon={<Settings2 className="size-4 text-primary" />} title="Ticket journalier chauffeur" subtitle="Un accès offert (FREE) n’est jamais une recette.">
+      {!cfg ? <p className="text-xs text-muted-foreground">Chargement…</p> : (
+        <div className="grid gap-3">
+          <div className="flex flex-wrap gap-2">
+            <Chip tone={cfg.mode === "FREE" ? "live" : "gold"}>Mode : {cfg.mode}</Chip>
+            <Chip tone={cfg.xfin_configured ? "live" : "danger"}>xFin : {cfg.xfin_configured ? "CONFIGURÉ" : "NON CONFIGURÉ"}</Chip>
+            <Chip tone="muted">Tarif standard : {cfg.standard_price_fcfa.toLocaleString("fr-FR")} FCFA</Chip>
+          </div>
+          <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motif du changement" className="h-11" />
+          <div className="flex gap-2">
+            <Button type="button" variant="secondary" disabled={busy || cfg.mode === "FREE"} onClick={() => void change("FREE")}>Passer en FREE</Button>
+            <Button type="button" variant="secondary" disabled={busy || cfg.mode === "PAID"} onClick={() => void change("PAID")}>Passer en PAID</Button>
+          </div>
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        </div>
+      )}
+    </Panel>
   );
 }
 

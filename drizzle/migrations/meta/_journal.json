@@ -232,6 +232,13 @@
       "when": 1790852103942,
       "tag": "0032_lot3a_day_ticket_v1_backend",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790852750367,
+      "tag": "0033_lot3b_day_ticket_v1_switch",
+      "breakpoints": true
     }
   ]
 }

@@ -1722,11 +1722,16 @@ export type Database = {
           vehicle_plate: string
         }[]
       }
+      get_ticket_config: { Args: never; Returns: Json }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      has_valid_driver_day_access: {
+        Args: { _driver_id: string }
         Returns: boolean
       }
       is_active_driver: { Args: { _uid: string }; Returns: boolean }
