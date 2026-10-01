@@ -328,6 +328,41 @@ export type Database = {
           },
         ]
       }
+      driver_document_ai_runs: {
+        Row: {
+          attempts: number
+          document_id: string
+          error_code: string | null
+          finished_at: string | null
+          started_at: string
+          status: string
+        }
+        Insert: {
+          attempts?: number
+          document_id: string
+          error_code?: string | null
+          finished_at?: string | null
+          started_at?: string
+          status: string
+        }
+        Update: {
+          attempts?: number
+          document_id?: string
+          error_code?: string | null
+          finished_at?: string | null
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_document_ai_runs_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: true
+            referencedRelation: "driver_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       driver_document_checks: {
         Row: {
           ai_model: string | null
@@ -772,6 +807,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      onboarding_control: {
+        Row: {
+          ai_auto_approve_enabled: boolean
+          ai_auto_approve_min_confidence: number
+          enforced_at: string | null
+          enforced_by: string | null
+          enforcement_mode: string
+          id: boolean
+          updated_at: string
+        }
+        Insert: {
+          ai_auto_approve_enabled?: boolean
+          ai_auto_approve_min_confidence?: number
+          enforced_at?: string | null
+          enforced_by?: string | null
+          enforcement_mode?: string
+          id?: boolean
+          updated_at?: string
+        }
+        Update: {
+          ai_auto_approve_enabled?: boolean
+          ai_auto_approve_min_confidence?: number
+          enforced_at?: string | null
+          enforced_by?: string | null
+          enforcement_mode?: string
+          id?: boolean
+          updated_at?: string
+        }
+        Relationships: []
       }
       payment_transactions: {
         Row: {
@@ -1435,8 +1500,20 @@ export type Database = {
           vehicle_validation: string
         }[]
       }
+      ai_complete_document_analysis: {
+        Args: { _document_id: string; _model: string; _result: Json }
+        Returns: Json
+      }
+      ai_fail_document_analysis: {
+        Args: { _document_id: string; _error_code: string }
+        Returns: undefined
+      }
       approve_driver: {
         Args: { _approve: boolean; _user_id: string }
+        Returns: undefined
+      }
+      assert_driver_documents_gate: {
+        Args: { _driver_id: string }
         Returns: undefined
       }
       bearing_deg: {
@@ -1456,6 +1533,10 @@ export type Database = {
       compute_driver_onboarding_state: {
         Args: { _driver_id: string }
         Returns: string
+      }
+      compute_driver_operational_eligibility: {
+        Args: { _driver_id: string }
+        Returns: Json
       }
       compute_eta: {
         Args: { _lat1: number; _lat2: number; _lng1: number; _lng2: number }
@@ -1532,6 +1613,14 @@ export type Database = {
         }
       }
       drop_off_ride: { Args: { _ride_id: string }; Returns: string }
+      enable_onboarding_enforcement: {
+        Args: { _confirmation: string }
+        Returns: Json
+      }
+      evaluate_driver_operational_eligibility: {
+        Args: { _driver_id: string }
+        Returns: Json
+      }
       export_full_ride_logs: {
         Args: never
         Returns: {
@@ -1601,6 +1690,7 @@ export type Database = {
         }[]
       }
       get_my_driver_onboarding: { Args: never; Returns: Json }
+      get_onboarding_enforcement_status: { Args: never; Returns: Json }
       get_public_activity: {
         Args: never
         Returns: {
@@ -1657,6 +1747,7 @@ export type Database = {
         Returns: undefined
       }
       normalize_plate: { Args: { _plate: string }; Returns: string }
+      onboarding_enforcement_mode: { Args: never; Returns: string }
       refresh_driver_onboarding_status: {
         Args: { _driver_id: string }
         Returns: string
@@ -1672,6 +1763,10 @@ export type Database = {
           _storage_path: string
           _vehicle_id?: string
         }
+        Returns: Json
+      }
+      request_document_ai_analysis: {
+        Args: { _document_id: string }
         Returns: Json
       }
       reset_demo_data: { Args: never; Returns: undefined }
