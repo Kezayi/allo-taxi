@@ -1229,6 +1229,7 @@ export type Database = {
           pickup_lat: number | null
           pickup_lng: number | null
           pickup_location: string
+          pool_entered_at: string
           price_final: number | null
           price_final_confirmed_at: string | null
           price_proposed: number
@@ -1265,6 +1266,7 @@ export type Database = {
           pickup_lat?: number | null
           pickup_lng?: number | null
           pickup_location: string
+          pool_entered_at?: string
           price_final?: number | null
           price_final_confirmed_at?: string | null
           price_proposed: number
@@ -1301,6 +1303,7 @@ export type Database = {
           pickup_lat?: number | null
           pickup_lng?: number | null
           pickup_location?: string
+          pool_entered_at?: string
           price_final?: number | null
           price_final_confirmed_at?: string | null
           price_proposed?: number
@@ -1712,6 +1715,7 @@ export type Database = {
           pickup_lat: number | null
           pickup_lng: number | null
           pickup_location: string
+          pool_entered_at: string
           price_final: number | null
           price_final_confirmed_at: string | null
           price_proposed: number
@@ -1746,6 +1750,7 @@ export type Database = {
         Args: { _driver_id: string }
         Returns: Json
       }
+      expire_overdue_rides_v1: { Args: never; Returns: number }
       expire_ride_v1: { Args: { _ride_id: string }; Returns: Json }
       export_full_ride_logs: {
         Args: never
@@ -1919,6 +1924,7 @@ export type Database = {
       normalize_client_phone_ga: { Args: { _raw: string }; Returns: string }
       normalize_plate: { Args: { _plate: string }; Returns: string }
       onboarding_enforcement_mode: { Args: never; Returns: string }
+      pool_expiry_minutes: { Args: never; Returns: number }
       presence_stale_threshold_sec: { Args: never; Returns: number }
       refresh_driver_onboarding_status: {
         Args: { _driver_id: string }
@@ -1998,6 +2004,7 @@ export type Database = {
           pickup_lat: number | null
           pickup_lng: number | null
           pickup_location: string
+          pool_entered_at: string
           price_final: number | null
           price_final_confirmed_at: string | null
           price_proposed: number
@@ -2033,6 +2040,7 @@ export type Database = {
       }
       ride_v1_legacy_status: { Args: { _s: string }; Returns: string }
       ride_v1_payment_code: { Args: { _legacy: string }; Returns: string }
+      ride_v1_pool_overdue: { Args: { _entered: string }; Returns: boolean }
       ride_v1_set_status: {
         Args: { _ride_id: string; _to: string }
         Returns: undefined
@@ -2058,6 +2066,10 @@ export type Database = {
       set_penalty_active: {
         Args: { _active: boolean; _id: string }
         Returns: undefined
+      }
+      set_pool_expiry_minutes_v1: {
+        Args: { _minutes: number }
+        Returns: number
       }
       set_shared_rides_enabled: { Args: { _on: boolean }; Returns: undefined }
       setting_num: { Args: { _default: number; _key: string }; Returns: number }
