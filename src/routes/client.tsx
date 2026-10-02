@@ -184,6 +184,7 @@ function ClientJourney() {
     if (prev && prev !== next.status) {
       if (next.status === "CONTACT_PENDING") chimes.accepted();
       if (next.status === "COMPLETED") chimes.finished();
+      if (next.status === "EXPIRED") chimes.expired();
     }
     lastStatus.current = next.status;
     setStatus(next);
@@ -208,6 +209,19 @@ function ClientJourney() {
     setStatus(null);
     setLost(false);
   }
+  // Relance : nouvelle course pré-remplie depuis la course expirée (jamais réactivée).
+  function relaunch(st: RideStatus) {
+    setPrefill({
+      ...initialForm,
+      firstName: session?.firstName ?? "",
+      phone: session?.phone ?? "",
+      pickup: st.pickup_location, landmark: st.pickup_landmark ?? "",
+      destination: st.dropoff_location, dropoffNote: st.dropoff_note ?? "",
+      passengers: st.passenger_count, wantsAc: st.wants_ac, shared: st.allow_sharing,
+      payment: (st.payment_method ?? "CASH") as Payment, price: st.price_proposed,
+    });
+    clearSession();
+  }
   function clearLegacy() {
     sessionStorage.removeItem(LEGACY_KEY);
     setLegacy(null);
@@ -216,10 +230,10 @@ function ClientJourney() {
   let body: React.ReactNode;
   if (!hydrated) body = null;
   else if (legacy && !session) body = <LegacyTracker session={legacy} onDone={clearLegacy} />;
-  else if (!session) body = <RequestScreen onCreated={startSession} />;
+  else if (!session) body = <RequestScreen key={prefill ? "relaunch" : "new"} initial={prefill} onCreated={(s) => { setPrefill(null); startSession(s); }} />;
   else if (lost) body = <Terminal title="Course introuvable" text="Cette course n’est plus accessible depuis cet appareil." onNew={clearSession} />;
   else if (!status) body = <p className="glass-panel p-8 text-center text-sm text-muted-foreground">Chargement de votre course…</p>;
-  else body = <RideScreen session={session} status={status} onRefresh={poll} onNew={clearSession} />;
+  else body = <RideScreen session={session} status={status} onRefresh={poll} onNew={clearSession} onRelaunch={() => relaunch(status)} />;
 
   return (
     <main className="relative min-h-svh overflow-hidden bg-background px-4 py-5 text-foreground sm:px-6 sm:py-8">
