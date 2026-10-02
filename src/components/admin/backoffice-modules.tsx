@@ -281,9 +281,34 @@ export function SystemSettingsPanel({ settings, onSaved, onNotice }: { settings:
         <Button type="submit" disabled={busy} className="h-12 font-bold shadow-gold sm:col-span-3"><Save />Enregistrer les paramètres</Button>
       </form>
     </Panel>
+    <PoolExpiryPanel onNotice={onNotice} />
     <TicketModePanel onNotice={onNotice} />
     <SharedRidesToggle onNotice={onNotice} />
     </>
+  );
+}
+
+/* Durée de vie d'une course dans le pool (journalisée côté serveur) */
+function PoolExpiryPanel({ onNotice }: { onNotice: Notice }) {
+  const [minutes, setMinutes] = useState<number>(13);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void supabase.rpc("pool_expiry_minutes").then(({ data }) => { if (typeof data === "number") setMinutes(data); });
+  }, []);
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    const { error } = await supabase.rpc("set_pool_expiry_minutes_v1", { _minutes: Math.round(minutes) });
+    setBusy(false);
+    onNotice(error ? "Durée refusée : entre 1 et 60 minutes." : "Durée de vie dans le pool enregistrée.");
+  }
+  return (
+    <Panel icon={<Settings2 className="size-4 text-primary" />} title="Durée de vie dans le pool" subtitle="Au-delà, une demande sans chauffeur expire et le client peut la relancer.">
+      <form onSubmit={save} className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+        <label className="block"><span className="mb-1 block text-xs font-medium">Minutes</span><Input type="number" min={1} max={60} step={1} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} className="h-12 text-lg font-bold tabular-nums" /><span className="mt-1 block text-[10px] text-muted-foreground">Entre 1 et 60 minutes</span></label>
+        <Button type="submit" disabled={busy} className="h-12 font-bold shadow-gold"><Save />Enregistrer</Button>
+      </form>
+    </Panel>
   );
 }
 
