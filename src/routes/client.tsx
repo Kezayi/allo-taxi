@@ -115,7 +115,7 @@ const CLIENT_CANCELABLE: V1Status[] = ["PENDING", "CONTACT_PENDING", "CONFIRMED"
 /* Secret de suivi : sessionStorage (survit au rechargement de l’onglet, jamais affiché, jamais dans l’URL). */
 const V1_KEY = "allo-taxi-ride-v1";
 const LEGACY_KEY = "allo-taxi-active-ride-v2";
-type Session = { id: string; token: string };
+type Session = { id: string; token: string; firstName?: string; phone?: string };
 const POLL_MS = 5000;
 
 function getPosition(): Promise<{ lat: number; lng: number } | null> {
@@ -158,6 +158,7 @@ function ClientJourney() {
   const [lost, setLost] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const lastStatus = useRef<V1Status | null>(null);
+  const [prefill, setPrefill] = useState<RideForm | null>(null);
 
   useEffect(() => {
     try {
@@ -184,6 +185,7 @@ function ClientJourney() {
     if (prev && prev !== next.status) {
       if (next.status === "CONTACT_PENDING") chimes.accepted();
       if (next.status === "COMPLETED") chimes.finished();
+      if (next.status === "EXPIRED") chimes.expired();
     }
     lastStatus.current = next.status;
     setStatus(next);
@@ -208,6 +210,19 @@ function ClientJourney() {
     setStatus(null);
     setLost(false);
   }
+  // Relance : nouvelle course pré-remplie depuis la course expirée (jamais réactivée).
+  function relaunch(st: RideStatus) {
+    setPrefill({
+      ...initialForm,
+      firstName: session?.firstName ?? "",
+      phone: session?.phone ?? "",
+      pickup: st.pickup_location, landmark: st.pickup_landmark ?? "",
+      destination: st.dropoff_location, dropoffNote: st.dropoff_note ?? "",
+      passengers: st.passenger_count, wantsAc: st.wants_ac, shared: st.allow_sharing,
+      payment: (st.payment_method ?? "CASH") as Payment, price: st.price_proposed,
+    });
+    clearSession();
+  }
   function clearLegacy() {
     sessionStorage.removeItem(LEGACY_KEY);
     setLegacy(null);
@@ -216,10 +231,10 @@ function ClientJourney() {
   let body: React.ReactNode;
   if (!hydrated) body = null;
   else if (legacy && !session) body = <LegacyTracker session={legacy} onDone={clearLegacy} />;
-  else if (!session) body = <RequestScreen onCreated={startSession} />;
+  else if (!session) body = <RequestScreen key={prefill ? "relaunch" : "new"} initial={prefill} onCreated={(s) => { setPrefill(null); startSession(s); }} />;
   else if (lost) body = <Terminal title="Course introuvable" text="Cette course n’est plus accessible depuis cet appareil." onNew={clearSession} />;
   else if (!status) body = <p className="glass-panel p-8 text-center text-sm text-muted-foreground">Chargement de votre course…</p>;
-  else body = <RideScreen session={session} status={status} onRefresh={poll} onNew={clearSession} />;
+  else body = <RideScreen session={session} status={status} onRefresh={poll} onNew={clearSession} onRelaunch={() => relaunch(status)} />;
 
   return (
     <main className="relative min-h-svh overflow-hidden bg-background px-4 py-5 text-foreground sm:px-6 sm:py-8">
@@ -243,8 +258,8 @@ function ClientJourney() {
 }
 
 /* ---------- Formulaire V1 ---------- */
-function RequestScreen({ onCreated }: { onCreated: (s: Session) => void }) {
-  const [form, setForm] = useState<RideForm>(initialForm);
+function RequestScreen({ onCreated, initial }: { onCreated: (s: Session) => void; initial?: RideForm | null }) {
+  const [form, setForm] = useState<RideForm>(initial ?? initialForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsState, setGpsState] = useState<"idle" | "loading" | "ok" | "unavailable">("idle");
@@ -314,7 +329,7 @@ function RequestScreen({ onCreated }: { onCreated: (s: Session) => void }) {
     setSubmitting(false);
     const row = data?.[0];
     if (error || !row) return setSubmitError(errorText(error?.message, "La demande n’a pas pu être publiée. Vérifiez vos informations."));
-    onCreated({ id: row.ride_id, token: row.token });
+    onCreated({ id: row.ride_id, token: row.token, firstName: d.firstName, phone: d.phone });
   }
 
   return (
@@ -418,7 +433,7 @@ function RequestScreen({ onCreated }: { onCreated: (s: Session) => void }) {
 }
 
 /* ---------- Suivi de course V1 ---------- */
-function RideScreen({ session, status, onRefresh, onNew }: { session: Session; status: RideStatus; onRefresh: () => Promise<void>; onNew: () => void }) {
+function RideScreen({ session, status, onRefresh, onNew, onRelaunch }: { session: Session; status: RideStatus; onRefresh: () => Promise<void>; onNew: () => void; onRelaunch: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -434,13 +449,26 @@ function RideScreen({ session, status, onRefresh, onNew }: { session: Session; s
   }
   const cancel = () => run(() => supabase.rpc("cancel_ride_v1", { _ride_id: session.id, _token: session.token }), "Annulation impossible pour le moment.");
 
+  if (s === "EXPIRED") {
+    return (
+      <section className="glass-panel p-8 text-center">
+        <div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary"><Clock3 className="size-7" /></div>
+        <h1 className="mt-5 text-2xl font-semibold">Votre demande a expiré</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Aucun chauffeur ne l’a prise à temps. Relancez-la : vous pourrez ajuster le prix proposé ({status.price_proposed.toLocaleString("fr-FR")} FCFA) avant de publier.</p>
+        <div className="mt-6 grid gap-2 sm:flex sm:justify-center">
+          <Button type="button" onClick={onRelaunch} className="h-12 font-semibold shadow-gold sm:px-8">Relancer ma demande</Button>
+          <Button type="button" variant="ghost" onClick={onNew} className="h-12">Nouvelle demande</Button>
+        </div>
+      </section>
+    );
+  }
+
   if (TERMINAL.includes(s)) {
     const texts: Partial<Record<V1Status, string>> = {
       COMPLETED: "Merci d’avoir voyagé avec Allo Taxi.",
       CANCELED_BY_CLIENT: "Votre demande a été annulée.",
       CANCELED_BY_DRIVER: "Le chauffeur a dû annuler la course. Vous pouvez publier une nouvelle demande.",
       CONTACT_FAILED: "Aucun accord n’a été trouvé avec le chauffeur.",
-      EXPIRED: "Aucun chauffeur n’a pris votre demande à temps. Vous pouvez la republier.",
       INCIDENT: "Un incident a été signalé sur cette course. Allo Taxi pourra vous recontacter.",
     };
     return <Terminal title={statusLabels[s]} text={texts[s] ?? ""} onNew={onNew} positive={s === "COMPLETED"} />;

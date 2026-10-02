@@ -295,6 +295,20 @@
       "when": 1790879384228,
       "tag": "0041_lot7_presence_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790926738441,
+      "tag": "0042_pool_expiry_v1",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790926771450,
+      "tag": "0043_pool_expiry_audit_source",
+      "breakpoints": true
     }
   ]
 }

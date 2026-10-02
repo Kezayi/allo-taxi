@@ -45,4 +45,5 @@ export const chimes = {
   arrived: () => playChime([784, 1046.5, 1318.5, 1568]),
   accepted: () => playChime([1318.5, 1046.5, 784]),
   finished: () => playChime([1568, 1318.5, 1046.5, 784]),
+  expired: () => playChime([659.3, 523.3]),
 };
