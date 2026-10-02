@@ -115,7 +115,7 @@ const CLIENT_CANCELABLE: V1Status[] = ["PENDING", "CONTACT_PENDING", "CONFIRMED"
 /* Secret de suivi : sessionStorage (survit au rechargement de l’onglet, jamais affiché, jamais dans l’URL). */
 const V1_KEY = "allo-taxi-ride-v1";
 const LEGACY_KEY = "allo-taxi-active-ride-v2";
-type Session = { id: string; token: string };
+type Session = { id: string; token: string; firstName?: string; phone?: string };
 const POLL_MS = 5000;
 
 function getPosition(): Promise<{ lat: number; lng: number } | null> {
@@ -158,6 +158,7 @@ function ClientJourney() {
   const [lost, setLost] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const lastStatus = useRef<V1Status | null>(null);
+  const [prefill, setPrefill] = useState<RideForm | null>(null);
 
   useEffect(() => {
     try {
@@ -257,8 +258,8 @@ function ClientJourney() {
 }
 
 /* ---------- Formulaire V1 ---------- */
-function RequestScreen({ onCreated }: { onCreated: (s: Session) => void }) {
-  const [form, setForm] = useState<RideForm>(initialForm);
+function RequestScreen({ onCreated, initial }: { onCreated: (s: Session) => void; initial?: RideForm | null }) {
+  const [form, setForm] = useState<RideForm>(initial ?? initialForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsState, setGpsState] = useState<"idle" | "loading" | "ok" | "unavailable">("idle");
@@ -328,7 +329,7 @@ function RequestScreen({ onCreated }: { onCreated: (s: Session) => void }) {
     setSubmitting(false);
     const row = data?.[0];
     if (error || !row) return setSubmitError(errorText(error?.message, "La demande n’a pas pu être publiée. Vérifiez vos informations."));
-    onCreated({ id: row.ride_id, token: row.token });
+    onCreated({ id: row.ride_id, token: row.token, firstName: d.firstName, phone: d.phone });
   }
 
   return (
