@@ -433,7 +433,7 @@ function RequestScreen({ onCreated, initial }: { onCreated: (s: Session) => void
 }
 
 /* ---------- Suivi de course V1 ---------- */
-function RideScreen({ session, status, onRefresh, onNew }: { session: Session; status: RideStatus; onRefresh: () => Promise<void>; onNew: () => void }) {
+function RideScreen({ session, status, onRefresh, onNew, onRelaunch }: { session: Session; status: RideStatus; onRefresh: () => Promise<void>; onNew: () => void; onRelaunch: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -449,13 +449,26 @@ function RideScreen({ session, status, onRefresh, onNew }: { session: Session; s
   }
   const cancel = () => run(() => supabase.rpc("cancel_ride_v1", { _ride_id: session.id, _token: session.token }), "Annulation impossible pour le moment.");
 
+  if (s === "EXPIRED") {
+    return (
+      <section className="glass-panel p-8 text-center">
+        <div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary"><Clock3 className="size-7" /></div>
+        <h1 className="mt-5 text-2xl font-semibold">Votre demande a expiré</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Aucun chauffeur ne l’a prise à temps. Relancez-la : vous pourrez ajuster le prix proposé ({status.price_proposed.toLocaleString("fr-FR")} FCFA) avant de publier.</p>
+        <div className="mt-6 grid gap-2 sm:flex sm:justify-center">
+          <Button type="button" onClick={onRelaunch} className="h-12 font-semibold shadow-gold sm:px-8">Relancer ma demande</Button>
+          <Button type="button" variant="ghost" onClick={onNew} className="h-12">Nouvelle demande</Button>
+        </div>
+      </section>
+    );
+  }
+
   if (TERMINAL.includes(s)) {
     const texts: Partial<Record<V1Status, string>> = {
       COMPLETED: "Merci d’avoir voyagé avec Allo Taxi.",
       CANCELED_BY_CLIENT: "Votre demande a été annulée.",
       CANCELED_BY_DRIVER: "Le chauffeur a dû annuler la course. Vous pouvez publier une nouvelle demande.",
       CONTACT_FAILED: "Aucun accord n’a été trouvé avec le chauffeur.",
-      EXPIRED: "Aucun chauffeur n’a pris votre demande à temps. Vous pouvez la republier.",
       INCIDENT: "Un incident a été signalé sur cette course. Allo Taxi pourra vous recontacter.",
     };
     return <Terminal title={statusLabels[s]} text={texts[s] ?? ""} onNew={onNew} positive={s === "COMPLETED"} />;
