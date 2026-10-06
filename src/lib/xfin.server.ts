@@ -5,6 +5,12 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const XFIN_DEFAULT_BASE_URL = "https://bo.xfin.pro/v1";
+export const XFIN_SANDBOX_BASE_URL = "https://portail.xfin.pro/portail/sandbox/v1";
+export type XfinEnvironment = "SANDBOX" | "PRODUCTION";
+/** XFIN_ENV absent ou invalide ⇒ PRODUCTION (le verrou PAID reste fermé en base). */
+export function xfinEnvironment(): XfinEnvironment {
+  return (process.env["XFIN_ENV"] ?? "").toUpperCase() === "SANDBOX" ? "SANDBOX" : "PRODUCTION";
+}
 export const XFIN_V1_OPERATORS = ["AIRTEL_MONEY", "MOOV_MONEY"] as const;
 export type XfinOperator = (typeof XFIN_V1_OPERATORS)[number];
 export const DAY_TICKET_AMOUNT_FCFA = 1000;
@@ -22,8 +28,9 @@ export class XfinNotConfiguredError extends XfinError {
 
 interface XfinEnv { baseUrl: string; appKey: string | undefined; appSecret: string | undefined; webhookSecret: string | undefined }
 function readEnv(): XfinEnv {
+  const sandbox = xfinEnvironment() === "SANDBOX";
   return {
-    baseUrl: process.env["XFIN_BASE_URL"] || XFIN_DEFAULT_BASE_URL,
+    baseUrl: sandbox ? XFIN_SANDBOX_BASE_URL : process.env["XFIN_BASE_URL"] || XFIN_DEFAULT_BASE_URL,
     appKey: process.env["XFIN_APP_KEY"] || undefined,
     appSecret: process.env["XFIN_APP_SECRET"] || undefined,
     webhookSecret: process.env["XFIN_WEBHOOK_SIGNATURE_SECRET"] || undefined,
@@ -33,7 +40,12 @@ function readEnv(): XfinEnv {
 /** Checklist non sensible : uniquement des booléens, jamais de valeur. */
 export function xfinSecretsPresence() {
   const e = readEnv();
-  return { credentials: Boolean(e.appKey && e.appSecret), webhookSecret: Boolean(e.webhookSecret) };
+  const env = xfinEnvironment();
+  // En Sandbox, seules des clés sbx_ sont acceptées ; en Production, jamais de clés sbx_.
+  const prefixOk = env === "SANDBOX"
+    ? Boolean(e.appKey?.startsWith("sbx_pk_") && e.appSecret?.startsWith("sbx_sk_"))
+    : !e.appKey?.startsWith("sbx_") && !e.appSecret?.startsWith("sbx_");
+  return { environment: env, credentials: Boolean(e.appKey && e.appSecret), keyPrefixOk: prefixOk, webhookSecret: Boolean(e.webhookSecret) };
 }
 
 /** Mapping HTTP du manuel : retry uniquement sur 502 (erreur technique agrégateur). */
@@ -57,6 +69,7 @@ export function mapProviderStatus(s: unknown): XfinProviderStatus {
 async function request<T>(method: "GET" | "POST", path: string, opts: { query?: Record<string, string>; body?: unknown; fetchImpl?: typeof fetch } = {}): Promise<T> {
   const env = readEnv();
   if (!env.appKey || !env.appSecret) throw new XfinNotConfiguredError(); // aucun appel réseau
+  if (!xfinSecretsPresence().keyPrefixOk) throw new XfinError("XFIN_KEY_ENVIRONMENT_MISMATCH");
   const url = new URL(env.baseUrl.replace(/\/$/, "") + path);
   for (const [k, v] of Object.entries(opts.query ?? {})) url.searchParams.set(k, v);
   const doFetch = opts.fetchImpl ?? fetch;
@@ -95,10 +108,11 @@ export type XfinConfigCheck =
   | { ready: true };
 
 /** Règle Allo Taxi : frais supportés par le chauffeur ⇒ paymentFeeOwner = CUSTOMER, sinon PAID interdit. */
-export function evaluateMe(me: XfinMe, webhookSecretPresent: boolean): XfinConfigCheck {
+export function evaluateMe(me: XfinMe, webhookSecretPresent: boolean, env: XfinEnvironment = "PRODUCTION"): XfinConfigCheck {
   if ((me.status ?? "").toLowerCase() !== "active") return { ready: false, code: "XFIN_APP_INACTIVE" };
   if ((me.paymentFeeOwner ?? "").toUpperCase() !== "CUSTOMER") return { ready: false, code: "XFIN_FEE_OWNER_MISMATCH" };
-  if (!webhookSecretPresent) return { ready: false, code: "XFIN_WEBHOOK_SECRET_MISSING" };
+  // Sandbox : aucun webhook émis par xFin, suivi par polling serveur uniquement.
+  if (env === "PRODUCTION" && !webhookSecretPresent) return { ready: false, code: "XFIN_WEBHOOK_SECRET_MISSING" };
   return { ready: true };
 }
 
@@ -137,7 +151,7 @@ export function parseCreatePayment(res: XfinCreatePaymentResponse) {
   return { xfinReference: res.xfinReference, status: "PENDING" as const };
 }
 
-export interface XfinTransaction { xfinReference?: string; transactionType?: string; status?: string; amount?: number; fees?: number; netAmount?: number; completedAt?: string }
+export interface XfinTransaction { xfinReference?: string; transactionType?: string; status?: string; failureReason?: string; errorCode?: string; reason?: string; amount?: number; fees?: number; netAmount?: number; completedAt?: string }
 export const getTransaction = (xfinReference: string) => request<XfinTransaction>("GET", `/transactions/${encodeURIComponent(xfinReference)}`);
 export const getBalance = () => request<unknown>("GET", "/balance");
 
@@ -179,4 +193,12 @@ export function toResolution(t: XfinTransaction, source: "webhook" | "polling") 
 export async function refreshTransaction(xfinReference: string) {
   const t = await getTransaction(xfinReference);
   return toResolution({ ...t, xfinReference }, "polling");
+}
+
+/** Motif d'échec renvoyé par xFin (INSUFFICIENT_FUNDS, USER_REJECTED, TIMEOUT, INVALID_ACCOUNT…), normalisé. */
+export function failureReasonOf(t: XfinTransaction): string | null {
+  const r = t.failureReason ?? t.errorCode ?? t.reason;
+  if (typeof r !== "string") return null;
+  const v = r.toUpperCase().replace(/[^A-Z_]/g, "_").slice(0, 64);
+  return v || null;
 }
