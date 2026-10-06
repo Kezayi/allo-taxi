@@ -1,4 +1,5 @@
 import { CommonFooter } from "@/components/common-footer";
+import { SandboxPayment } from "@/components/driver/sandbox-payment";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -353,6 +354,7 @@ function DriverWorkspace() {
     else if (next.isOnline) void refreshPool();
   }
 
+  const sandboxActivated = useCallback(() => patchState({ accessActive: true }), []); // eslint-disable-line react-hooks/exhaustive-deps
   async function activateDay() {
     setBusy(true);
     const { error } = await supabase.rpc("activate_my_driver_day_v1", { _payment_msisdn: null as unknown as string });
@@ -486,6 +488,7 @@ function DriverWorkspace() {
                   <p className="mt-3 text-sm leading-6 text-muted-foreground">Aucun paiement requis. Accès valable jusqu’à minuit (heure de Libreville).</p>
                   <p className="mt-1 text-[11px] text-muted-foreground">Tarif standard : {ticket.price.toLocaleString("fr-FR")} FCFA — non facturé aujourd’hui.</p>
                   <Button type="button" disabled={busy} onClick={() => void activateDay()} className="mt-6 h-14 w-full text-sm font-bold shadow-gold"><ShieldCheck />Activer mon accès aujourd’hui</Button>
+                  <SandboxPayment onActivated={sandboxActivated} />
                 </>
               ) : (
                 <>
