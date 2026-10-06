@@ -856,6 +856,7 @@ export type Database = {
           payer_msisdn: string | null
           provider: string
           provider_completed_at: string | null
+          provider_environment: string
           provider_metadata: Json
           provider_net_amount_fcfa: number | null
           refund_of_id: string | null
@@ -881,6 +882,7 @@ export type Database = {
           payer_msisdn?: string | null
           provider: string
           provider_completed_at?: string | null
+          provider_environment?: string
           provider_metadata?: Json
           provider_net_amount_fcfa?: number | null
           refund_of_id?: string | null
@@ -906,6 +908,7 @@ export type Database = {
           payer_msisdn?: string | null
           provider?: string
           provider_completed_at?: string | null
+          provider_environment?: string
           provider_metadata?: Json
           provider_net_amount_fcfa?: number | null
           refund_of_id?: string | null
@@ -1489,6 +1492,38 @@ export type Database = {
           },
         ]
       }
+      xfin_sandbox_testers: {
+        Row: {
+          driver_id: string
+          enabled: boolean
+          reason: string
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          driver_id: string
+          enabled?: boolean
+          reason: string
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          driver_id?: string
+          enabled?: boolean
+          reason?: string
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "xfin_sandbox_testers_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: true
+            referencedRelation: "drivers"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1564,6 +1599,11 @@ export type Database = {
       admin_list_driver_restrictions_v1: { Args: never; Returns: Json }
       admin_list_live_rides: { Args: never; Returns: Json }
       admin_list_rides_v1: { Args: { _limit?: number }; Returns: Json }
+      admin_list_xfin_sandbox_v1: { Args: never; Returns: Json }
+      admin_set_xfin_sandbox_tester_v1: {
+        Args: { _driver: string; _enabled: boolean; _reason: string }
+        Returns: Json
+      }
       advance_ride_v1: {
         Args: { _action: string; _ride_id: string }
         Returns: Json
@@ -1599,6 +1639,10 @@ export type Database = {
       }
       assert_driver_not_restricted_for_new_ride: {
         Args: { _uid: string }
+        Returns: undefined
+      }
+      attach_sandbox_xfin_reference_v1: {
+        Args: { _ref: string; _tx: string }
         Returns: undefined
       }
       bearing_deg: {
@@ -1780,6 +1824,10 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      fail_sandbox_payment_v1: {
+        Args: { _code: string; _tx: string }
+        Returns: undefined
       }
       finance_eligible_payments_v1: {
         Args: never
@@ -2071,6 +2119,10 @@ export type Database = {
         Args: { _minutes: number }
         Returns: number
       }
+      set_sandbox_failure_reason_v1: {
+        Args: { _code: string; _tx: string }
+        Returns: undefined
+      }
       set_shared_rides_enabled: { Args: { _on: boolean }; Returns: undefined }
       setting_num: { Args: { _default: number; _key: string }; Returns: number }
       shared_detour_threshold_km: { Args: never; Returns: number }
@@ -2078,6 +2130,15 @@ export type Database = {
       shared_v1_rejection: {
         Args: { _uid: string; c: Database["public"]["Tables"]["rides"]["Row"] }
         Returns: string
+      }
+      start_sandbox_day_payment_v1: {
+        Args: {
+          _driver: string
+          _fees: number
+          _msisdn: string
+          _operator: string
+        }
+        Returns: Json
       }
       superadmin_exists: { Args: never; Returns: boolean }
       take_ride: {
@@ -2126,6 +2187,10 @@ export type Database = {
       }
       url_encode: { Args: { _s: string }; Returns: string }
       xfin_integration_ready: { Args: never; Returns: boolean }
+      xfin_sandbox_tester_enabled: {
+        Args: { _driver: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "client" | "chauffeur" | "associe" | "super_admin"

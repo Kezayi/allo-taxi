@@ -345,6 +345,7 @@ function TicketModePanel({ onNotice }: { onNotice: Notice }) {
           </div>
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <XfinChecklistView />
+          <XfinSandboxPanel onNotice={onNotice} />
         </div>
       )}
     </Panel>
@@ -360,6 +361,8 @@ function XfinChecklistView() {
   const ok = (v: string) => (["configurés", "configuré", "oui", "compatible"].includes(v) ? "live" : v === "inconnu" ? "muted" : "danger") as "live" | "muted" | "danger";
   return (
     <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+      <Chip tone={c.environment === "SANDBOX" ? "gold" : "muted"}>Environnement : {c.environment}</Chip>
+      <Chip tone={c.keyPrefix === "conforme" ? "live" : "danger"}>Clés : {c.keyPrefix}</Chip>
       <Chip tone={ok(c.credentials)}>Credentials : {c.credentials}</Chip>
       <Chip tone={ok(c.appActive)}>Application active : {c.appActive}</Chip>
       <Chip tone={ok(c.feeOwner)}>Fee owner : {c.feeOwner}</Chip>
@@ -411,5 +414,39 @@ export function DemoDataControls({ onNotice, onChanged }: { onNotice: Notice; on
         )}
       </div>
     </Panel>
+  );
+}
+
+/* Testeurs xFin SANDBOX + transactions test (jamais comptées en recette) */
+function XfinSandboxPanel({ onNotice }: { onNotice: Notice }) {
+  type Row = { driver_id: string; name: string; enabled: boolean };
+  type Tx = { id: string; driver: string | null; operator: string | null; status: string; total: number; fees: number; error_code: string | null; created_at: string };
+  const [data, setData] = useState<{ drivers: Row[]; transactions: Tx[] } | null>(null);
+  const [reason, setReason] = useState("");
+  const load = useCallback(() => void supabase.rpc("admin_list_xfin_sandbox_v1").then(({ data: d }) => { if (d) setData(d as unknown as { drivers: Row[]; transactions: Tx[] }); }), []);
+  useEffect(load, [load]);
+  async function toggle(r: Row) {
+    const { error } = await supabase.rpc("admin_set_xfin_sandbox_tester_v1", { _driver: r.driver_id, _enabled: !r.enabled, _reason: reason.trim() });
+    if (error) return onNotice(error.message.includes("REASON") ? "Motif obligatoire." : "Changement refusé.");
+    onNotice(!r.enabled ? `${r.name} autorisé au paiement test.` : `${r.name} retiré du paiement test.`);
+    load();
+  }
+  if (!data) return null;
+  return (
+    <div className="grid gap-2 border-t border-border pt-3">
+      <p className="text-xs font-semibold uppercase text-primary">Paiement test SANDBOX — aucun argent réel, jamais une recette</p>
+      <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motif (autoriser / retirer)" className="h-10" />
+      {data.drivers.map((r) => (
+        <div key={r.driver_id} className="flex items-center justify-between gap-2 text-sm">
+          <span>{r.name}</span>
+          <Button type="button" size="sm" variant={r.enabled ? "default" : "secondary"} onClick={() => void toggle(r)}>{r.enabled ? "Autorisé" : "Non autorisé"}</Button>
+        </div>
+      ))}
+      {data.transactions.length > 0 && (
+        <ul className="grid gap-1 text-xs text-muted-foreground">
+          {data.transactions.map((t) => <li key={t.id}>{new Date(t.created_at).toLocaleString("fr-FR")} · {t.driver ?? "—"} · {t.operator ?? "—"} · {t.total} FCFA · {t.status}{t.error_code ? ` (${t.error_code})` : ""}</li>)}
+        </ul>
+      )}
+    </div>
   );
 }
