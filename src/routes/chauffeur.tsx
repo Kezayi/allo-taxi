@@ -354,7 +354,7 @@ function DriverWorkspace() {
     else if (next.isOnline) void refreshPool();
   }
 
-  const sandboxActivated = useCallback(() => patchState({ accessActive: true }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const sandboxActivated = useCallback(() => patchState({ accessActive: true }), [patchState]);
   async function activateDay() {
     setBusy(true);
     const { error } = await supabase.rpc("activate_my_driver_day_v1", { _payment_msisdn: null as unknown as string });
